@@ -1,6 +1,9 @@
 import pg from "pg";
+import fs from "node:fs";
+import path from "node:path";
 
 const { Pool } = pg;
+const APP_VIEWS_SQL_PATH = path.resolve(process.cwd(), "database/postgres/004_qpms_app_raw_views.sql");
 
 function quoteIdentifier(value) {
   return `"${String(value).replace(/"/g, '""')}"`;
@@ -85,7 +88,7 @@ async function recreateRawTable(client, tableName, headers) {
   const tableRef = `qpms_raw.${quoteIdentifier(tableName)}`;
   const columnSql = headers.map((header) => `${quoteIdentifier(header)} text`).join(", ");
 
-  await client.query(`drop table if exists ${tableRef}`);
+  await client.query(`drop table if exists ${tableRef} cascade`);
 
   await client.query(`
     create table ${tableRef} (
@@ -94,6 +97,16 @@ async function recreateRawTable(client, tableName, headers) {
   `);
 
   return tableRef;
+}
+
+async function refreshAppViews(client) {
+  if (!fs.existsSync(APP_VIEWS_SQL_PATH)) {
+    return false;
+  }
+
+  const sql = fs.readFileSync(APP_VIEWS_SQL_PATH, "utf8");
+  await client.query(sql);
+  return true;
 }
 
 async function insertRows(client, tableRef, headers, rows) {
@@ -191,6 +204,8 @@ export async function importWorkbookToRawDb(pool, payload) {
       });
     }
 
+    const refreshedAppViews = await refreshAppViews(client);
+
     await client.query("commit");
 
     return {
@@ -199,6 +214,7 @@ export async function importWorkbookToRawDb(pool, payload) {
       sourceName,
       workbookName,
       mode: "replace",
+      refreshedAppViews,
       sheets: importedSheets,
       totalRows: importedSheets.reduce((sum, sheet) => sum + sheet.rows, 0),
     };

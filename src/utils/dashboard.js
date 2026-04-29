@@ -458,7 +458,29 @@ export function buildTrendSnapshot(dataSource) {
   });
 }
 
-function getReportColumns(reportType) {
+function isRawAttendanceRows(rows = []) {
+  return rows.some((row) => row?.epNo || row?.attDate || row?.rawStatus);
+}
+
+function getReportColumns(reportType, rows = []) {
+  if (reportType === "Attendance" && isRawAttendanceRows(rows)) {
+    return [
+      "EP No",
+      "EP Name",
+      "Manager Name",
+      "Manager EC No",
+      "Site Code",
+      "Site Name",
+      "State",
+      "Class",
+      "Att. Date",
+      "Att. Status",
+      "In Time",
+      "Out Time",
+      "Man Hours",
+    ];
+  }
+
   if (reportType === "Attendance") {
     return ["Store ID", "Store Name", "Location", "Region", "Present %", "Absent %", "Manpower On Roll", "Risk Status"];
   }
@@ -504,6 +526,24 @@ function getReportColumns(reportType) {
 
 function getReportRows(rows, reportType) {
   return rows.map((row) => {
+    if (reportType === "Attendance" && isRawAttendanceRows([row])) {
+      return [
+        row.epNo,
+        row.employeeName,
+        row.managerName,
+        row.managerCode,
+        row.storeId,
+        row.storeName,
+        row.state || row.region,
+        row.class,
+        row.attDate,
+        roundNumber(row.attValue ?? row.rawStatus ?? 0),
+        row.inTime,
+        row.outTime,
+        row.manHours,
+      ];
+    }
+
     if (reportType === "Attendance") {
       return [
         row.storeId,
@@ -742,7 +782,7 @@ export function exportAttendanceSummaryToPdf(rows, title, month, selectedDate) {
 }
 
 export function exportRowsToExcel(rows, reportType, month) {
-  const columns = getReportColumns(reportType);
+  const columns = getReportColumns(reportType, rows);
   const data = getReportRows(rows, reportType);
   const table = buildTableMarkup(columns, data);
   const fileReport = reportType === "All Reports" ? "unified-dashboard" : reportType.toLowerCase().replace(/\s+/g, "-");
@@ -772,9 +812,9 @@ export function getDataSourceSummary(dataSource) {
   };
 }
 
-function getAttendanceStateAopMap(monthRows, stores, month) {
-  const stateMap = buildStateAopMap(stores, month);
-  const adjustedStoreAopMap = buildAdjustedStoreAopMap(stores, month);
+function getAttendanceStateAopMap(monthRows, stores, month, manualAopOverrides = {}) {
+  const stateMap = buildStateAopMap(stores, month, manualAopOverrides);
+  const adjustedStoreAopMap = buildAdjustedStoreAopMap(stores, month, manualAopOverrides);
   const storesById = new Map(stores.map((store) => [store.storeId, store]));
 
   monthRows.forEach((row) => {
@@ -798,6 +838,20 @@ function getAttendanceStateAopMap(monthRows, stores, month) {
   });
 
   return stateMap;
+}
+
+function buildAopRows(stateAopMap) {
+  return sortOperationalStates([...stateAopMap.keys()])
+    .filter((state) => OPERATIONAL_STATE_ORDER.includes(state))
+    .map((state) => {
+      const counts = stateAopMap.get(state) || {};
+
+      return {
+        state,
+        hkAopCount: Number(safeNumber(counts.hkAopCount).toFixed(2)),
+        mepcAopCount: Number(safeNumber(counts.mepcAopCount).toFixed(2)),
+      };
+    });
 }
 
 function buildAttendanceStateRows(rows, stateAopMap, dayCount, mepcDayCount = dayCount) {
@@ -889,11 +943,13 @@ export function getAttendanceAvailableDates(dataSource, month) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-export function buildAttendanceSummary(dataSource, month, selectedDate) {
+export function buildAttendanceSummary(dataSource, month, selectedDate, manualAopOverrides = {}) {
   const attendanceDaily = getArray(dataSource, "attendanceDaily").filter((row) => row.month === month);
   const stores = getArray(dataSource, "stores");
   const availableDates = getAttendanceAvailableDates(dataSource, month);
   const effectiveDate = availableDates.includes(selectedDate) ? selectedDate : availableDates[availableDates.length - 1] || null;
+  const stateAopMap = getAttendanceStateAopMap(attendanceDaily, stores, month, manualAopOverrides);
+  const aopRows = buildAopRows(stateAopMap);
 
   if (!effectiveDate || attendanceDaily.length === 0) {
     return {
@@ -901,10 +957,10 @@ export function buildAttendanceSummary(dataSource, month, selectedDate) {
       selectedDate: null,
       dayRows: [],
       monthToDateRows: [],
+      aopRows,
     };
   }
 
-  const stateAopMap = getAttendanceStateAopMap(attendanceDaily, stores, month);
   const dayRows = buildAttendanceStateRows(
     attendanceDaily.filter((row) => row.attDate === effectiveDate),
     stateAopMap,
@@ -924,5 +980,6 @@ export function buildAttendanceSummary(dataSource, month, selectedDate) {
     selectedDate: effectiveDate,
     dayRows,
     monthToDateRows,
+    aopRows,
   };
 }

@@ -1,5 +1,139 @@
-import { exportAttendanceSummaryToExcel, exportAttendanceSummaryToPdf } from "../utils/dashboard";
+import { useEffect, useMemo, useState } from "react";
+import { exportAttendanceSummaryToExcel, exportAttendanceSummaryToPdf, formatMonthLabel } from "../utils/dashboard";
 import { formatNumber, formatPercent } from "../utils/formatters";
+import { OPERATIONAL_STATE_ORDER } from "../utils/stateGroups";
+
+function toDraftValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? String(numeric) : "";
+}
+
+function AopUpdatePanel({ month, aopRows = [], manualAopOverrides = {}, onSave, onReset }) {
+  const stateOptions = useMemo(() => {
+    const availableStates = new Set(aopRows.map((row) => row.state));
+    return OPERATIONAL_STATE_ORDER.filter((state) => availableStates.has(state));
+  }, [aopRows]);
+  const [selectedState, setSelectedState] = useState(stateOptions[0] || OPERATIONAL_STATE_ORDER[0]);
+  const selectedAop = aopRows.find((row) => row.state === selectedState) || {
+    state: selectedState,
+    hkAopCount: 0,
+    mepcAopCount: 0,
+  };
+  const [draft, setDraft] = useState({
+    hkAopCount: toDraftValue(selectedAop.hkAopCount),
+    mepcAopCount: toDraftValue(selectedAop.mepcAopCount),
+  });
+  const hasManualOverride = Boolean(manualAopOverrides?.[selectedState]);
+
+  useEffect(() => {
+    if (stateOptions.length && !stateOptions.includes(selectedState)) {
+      setSelectedState(stateOptions[0]);
+    }
+  }, [selectedState, stateOptions]);
+
+  useEffect(() => {
+    setDraft({
+      hkAopCount: toDraftValue(selectedAop.hkAopCount),
+      mepcAopCount: toDraftValue(selectedAop.mepcAopCount),
+    });
+  }, [selectedAop.hkAopCount, selectedAop.mepcAopCount]);
+
+  const handleDraftChange = (field, value) => {
+    setDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleSave = () => {
+    if (!stateOptions.length) {
+      return;
+    }
+
+    onSave(selectedState, {
+      hkAopCount: draft.hkAopCount,
+      mepcAopCount: draft.mepcAopCount,
+    });
+  };
+
+  const handleReset = () => {
+    onReset(selectedState);
+  };
+
+  return (
+    <section className="panel attendance-aop-panel">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">AOP Budget Setup</p>
+          <h3>State-wise HK / MEPC AOP Count</h3>
+          <p>Manual demo layer for {formatMonthLabel(month)}. Later this can move into store budget tables.</p>
+        </div>
+        <span className={`attendance-aop-panel__status ${hasManualOverride ? "is-custom" : ""}`}>
+          {hasManualOverride ? "Manual override active" : "Using default AOP"}
+        </span>
+      </div>
+
+      <div className="attendance-aop-editor">
+        <label>
+          <span>State</span>
+          <select value={selectedState} onChange={(event) => setSelectedState(event.target.value)}>
+            {!stateOptions.length ? <option value={selectedState}>No AOP states</option> : null}
+            {stateOptions.map((state) => (
+              <option key={state} value={state}>
+                {state}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>HK AOP Count</span>
+          <input
+            type="number"
+            step="0.01"
+            value={draft.hkAopCount}
+            onChange={(event) => handleDraftChange("hkAopCount", event.target.value)}
+            placeholder="HK count"
+          />
+        </label>
+
+        <label>
+          <span>MEPC AOP Count</span>
+          <input
+            type="number"
+            step="0.01"
+            value={draft.mepcAopCount}
+            onChange={(event) => handleDraftChange("mepcAopCount", event.target.value)}
+            placeholder="MEPC count"
+          />
+        </label>
+
+        <div className="attendance-aop-editor__actions">
+          <button type="button" className="primary-button" onClick={handleSave} disabled={!stateOptions.length}>
+            Save AOP
+          </button>
+          <button type="button" className="ghost-button" onClick={handleReset} disabled={!hasManualOverride}>
+            Reset State
+          </button>
+        </div>
+      </div>
+
+      <div className="attendance-aop-strip">
+        {aopRows.map((row) => (
+          <button
+            key={row.state}
+            type="button"
+            className={`attendance-aop-chip ${row.state === selectedState ? "is-active" : ""}`}
+            onClick={() => setSelectedState(row.state)}
+          >
+            <strong>{row.state}</strong>
+            <span>HK {formatNumber(row.hkAopCount)} | MEPC {formatNumber(row.mepcAopCount)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function AttendanceMatrix({ title, rows, month, selectedDate, availableDates = [], onDateChange = null, showExportActions = true }) {
   const totalRow = rows.find((row) => row.state === "Grand Total");
@@ -114,9 +248,27 @@ function AttendanceMatrix({ title, rows, month, selectedDate, availableDates = [
   );
 }
 
-export function AttendanceSummaryPanel({ availableDates, selectedDate, onDateChange, dayRows, monthToDateRows, month }) {
+export function AttendanceSummaryPanel({
+  availableDates,
+  aopRows,
+  manualAopOverrides,
+  selectedDate,
+  onDateChange,
+  onAopSave,
+  onAopReset,
+  dayRows,
+  monthToDateRows,
+  month,
+}) {
   return (
     <>
+      <AopUpdatePanel
+        month={month}
+        aopRows={aopRows}
+        manualAopOverrides={manualAopOverrides}
+        onSave={onAopSave}
+        onReset={onAopReset}
+      />
       <AttendanceMatrix
         title="Selected Day Attendance Summary"
         rows={dayRows}

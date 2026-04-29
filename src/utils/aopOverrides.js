@@ -1,7 +1,8 @@
 import { normalizeOperationalState } from "./stateGroups";
 
 function safeNumber(value) {
-  return Number.isFinite(value) ? value : 0;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 export const MONTHLY_STATE_AOP_OVERRIDES = {
@@ -15,7 +16,28 @@ export const MONTHLY_STATE_AOP_OVERRIDES = {
   },
 };
 
-export function buildStateAopMap(stores, month) {
+function getMergedStateOverrides(month, manualOverrides = {}) {
+  const monthlyDefaults = MONTHLY_STATE_AOP_OVERRIDES[month] || {};
+  const mergedOverrides = new Map();
+
+  Object.entries(monthlyDefaults).forEach(([state, counts]) => {
+    mergedOverrides.set(normalizeOperationalState(state), {
+      hkAopCount: safeNumber(counts.hkAopCount),
+      mepcAopCount: safeNumber(counts.mepcAopCount),
+    });
+  });
+
+  Object.entries(manualOverrides || {}).forEach(([state, counts]) => {
+    mergedOverrides.set(normalizeOperationalState(state), {
+      hkAopCount: safeNumber(counts.hkAopCount),
+      mepcAopCount: safeNumber(counts.mepcAopCount),
+    });
+  });
+
+  return mergedOverrides;
+}
+
+export function buildStateAopMap(stores, month, manualOverrides = {}) {
   const baseStateMap = new Map();
 
   stores.forEach((store) => {
@@ -29,16 +51,8 @@ export function buildStateAopMap(stores, month) {
     current.mepcAopCount += safeNumber(store?.mepcAopCount);
   });
 
-  const overrides = MONTHLY_STATE_AOP_OVERRIDES[month];
-  if (!overrides) {
-    return baseStateMap;
-  }
-
-  Object.entries(overrides).forEach(([state, counts]) => {
-    baseStateMap.set(state, {
-      hkAopCount: safeNumber(counts.hkAopCount),
-      mepcAopCount: safeNumber(counts.mepcAopCount),
-    });
+  getMergedStateOverrides(month, manualOverrides).forEach((counts, state) => {
+    baseStateMap.set(state, counts);
   });
 
   return baseStateMap;
@@ -55,11 +69,11 @@ function buildBaseStoreEntry(store) {
   };
 }
 
-export function buildAdjustedStoreAopMap(stores, month) {
-  const overrides = MONTHLY_STATE_AOP_OVERRIDES[month];
+export function buildAdjustedStoreAopMap(stores, month, manualOverrides = {}) {
+  const overrides = getMergedStateOverrides(month, manualOverrides);
   const adjustedMap = new Map();
 
-  if (!overrides) {
+  if (!overrides.size) {
     stores.forEach((store) => {
       adjustedMap.set(store.storeId, buildBaseStoreEntry(store));
     });
@@ -79,7 +93,7 @@ export function buildAdjustedStoreAopMap(stores, month) {
   });
 
   storesByState.forEach((stateStores, state) => {
-    const stateOverride = overrides[state];
+    const stateOverride = overrides.get(state);
 
     if (!stateOverride) {
       stateStores.forEach((store) => {

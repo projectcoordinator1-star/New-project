@@ -13,6 +13,7 @@ function App() {
   const {
     activeFilters,
     activeView,
+    attendanceAopOverrides,
     attendanceSummary,
     currentRole,
     dataInfo,
@@ -39,6 +40,8 @@ function App() {
     workflowFiles,
     canProcessWorkflow,
     handleAddStore,
+    handleAttendanceAopReset,
+    handleAttendanceAopSave,
     handleAttendanceDateChange,
     handleFilterChange,
     handleFilterReset,
@@ -111,6 +114,7 @@ function App() {
 
         <ViewRenderer
           activeView={activeView}
+          attendanceAopOverrides={attendanceAopOverrides}
           attendanceSummary={attendanceSummary}
           currentRole={currentRole}
           dataSource={dataSource}
@@ -120,6 +124,8 @@ function App() {
           groupBy={groupBy}
           month={activeFilters.month}
           onAddStore={handleAddStore}
+          onAttendanceAopReset={handleAttendanceAopReset}
+          onAttendanceAopSave={handleAttendanceAopSave}
           onAttendanceDateChange={handleAttendanceDateChange}
           onGroupChange={onGroupChange}
           onRemarkChange={handleRemarkChange}

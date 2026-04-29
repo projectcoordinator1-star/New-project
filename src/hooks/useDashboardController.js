@@ -318,6 +318,8 @@ function mapApiRowsToDataSource(apiData = {}) {
     attDate: row.attendance_date,
     epNo: row.ep_no,
     employeeName: row.employee_name,
+    managerName: row.manager_name,
+    managerCode: row.manager_code,
     class: row.class_code || "Unknown",
     rawStatus: row.raw_status,
     attValue: toNumber(row.attendance_value),
@@ -531,6 +533,7 @@ export function useDashboardController() {
   const [currentRole, setCurrentRole] = useState(() => readStoredValue("qpms-current-role", "management"));
   const [workflowUpdates, setWorkflowUpdates] = useState(() => readStoredJson("qpms-workflow-updates", {}));
   const [faultRemarks, setFaultRemarks] = useState(() => readStoredJson("qpms-fault-remarks", {}));
+  const [attendanceAopOverrides, setAttendanceAopOverrides] = useState(() => readStoredJson("qpms-attendance-aop-overrides", {}));
   const lastAutoAttendanceDateRef = useRef("");
 
   const [workflowFiles, setWorkflowFiles] = useState({
@@ -695,6 +698,10 @@ export function useDashboardController() {
     window.localStorage.setItem("qpms-fault-remarks", JSON.stringify(faultRemarks));
   }, [faultRemarks]);
 
+  useEffect(() => {
+    window.localStorage.setItem("qpms-attendance-aop-overrides", JSON.stringify(attendanceAopOverrides));
+  }, [attendanceAopOverrides]);
+
   const unifiedData = useMemo(() => createUnifiedDataset(dataSource, activeFilters.month), [dataSource, activeFilters.month]);
 
   const filterOptions = useMemo(
@@ -764,9 +771,41 @@ export function useDashboardController() {
   }, [activeView, filteredRows, scopedWorkflowStoreIds]);
 
   const attendanceSummary = useMemo(
-    () => buildAttendanceSummary(dataSource, activeFilters.month, selectedAttendanceDate),
-    [dataSource, activeFilters.month, selectedAttendanceDate],
+    () => buildAttendanceSummary(dataSource, activeFilters.month, selectedAttendanceDate, attendanceAopOverrides[activeFilters.month] || {}),
+    [dataSource, activeFilters.month, selectedAttendanceDate, attendanceAopOverrides],
   );
+
+  const handleAttendanceAopSave = (state, counts) => {
+    const hkAopCount = toNumber(counts.hkAopCount);
+    const mepcAopCount = toNumber(counts.mepcAopCount);
+
+    setAttendanceAopOverrides((current) => ({
+      ...current,
+      [activeFilters.month]: {
+        ...(current[activeFilters.month] || {}),
+        [state]: {
+          hkAopCount,
+          mepcAopCount,
+        },
+      },
+    }));
+  };
+
+  const handleAttendanceAopReset = (state) => {
+    setAttendanceAopOverrides((current) => {
+      const monthOverrides = { ...(current[activeFilters.month] || {}) };
+      delete monthOverrides[state];
+
+      const next = { ...current };
+      if (Object.keys(monthOverrides).length) {
+        next[activeFilters.month] = monthOverrides;
+      } else {
+        delete next[activeFilters.month];
+      }
+
+      return next;
+    });
+  };
 
   const handleFilterChange = (field, value) => {
     if (!FILTERABLE_VIEWS.includes(activeView)) return;
@@ -1020,6 +1059,7 @@ export function useDashboardController() {
   return {
     activeFilters,
     activeView,
+    attendanceAopOverrides,
     attendanceSummary,
     currentRole,
     dataInfo,
@@ -1053,6 +1093,8 @@ export function useDashboardController() {
         (workflowFiles.allocation && workflowFiles.attendance) ||
         (workflowFiles.allocation && (workflowFiles.pending || workflowFiles.dashboard)),
     ),
+    handleAttendanceAopReset,
+    handleAttendanceAopSave,
     handleAttendanceDateChange: setSelectedAttendanceDate,
     handleAddStore,
     handleFilterChange,

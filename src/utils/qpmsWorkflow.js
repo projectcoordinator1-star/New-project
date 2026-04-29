@@ -767,6 +767,8 @@ function buildAttendanceRows(XLSX, rows, allocationIndex, config) {
       siteCode: cleanCode(row[config.siteCodeField]),
       epNo: cleanText(row[config.employeeIdField]),
       employeeName: cleanText(row[config.employeeNameField]),
+      managerName: cleanText(row[config.managerNameField]),
+      managerCode: cleanText(row[config.managerCodeField]),
       class: mapAttendanceClass(row[config.classField]),
       rawStatus: cleanText(row[config.statusField]),
       attValue: mapAttendanceValue(row[config.statusField]),
@@ -1361,6 +1363,8 @@ export async function importQpmsWorkflow({ allocationFile, attendanceFile, pendi
       stateField: "STATE",
       employeeIdField: "EP No",
       employeeNameField: "EP Name",
+      managerNameField: "Manager Name",
+      managerCodeField: "Manager EC No",
     });
 
     attendanceDaily = attendanceResult.rows;
@@ -1397,6 +1401,8 @@ export async function importQpmsWorkflow({ allocationFile, attendanceFile, pendi
           stateField: "STATE",
           employeeIdField: "EP No",
           employeeNameField: "EP Name",
+          managerNameField: "Manager Name",
+          managerCodeField: "Manager EC No",
         });
 
         attendanceDaily = attendanceResult.rows;

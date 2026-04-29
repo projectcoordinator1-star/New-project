@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { exportRowsToExcel, exportRowsToPdf } from "../utils/dashboard";
 import { AttendanceSummaryPanel } from "./AttendanceSummaryPanel";
 import { DataSyncExplainer } from "./DataSyncExplainer";
@@ -13,6 +14,7 @@ import { PoRequestLab } from "./po/PoRequestLab";
 
 export function ViewRenderer({
   activeView,
+  attendanceAopOverrides,
   attendanceSummary,
   currentRole,
   dataSource,
@@ -22,6 +24,8 @@ export function ViewRenderer({
   groupBy,
   month,
   onAddStore,
+  onAttendanceAopReset,
+  onAttendanceAopSave,
   onAttendanceDateChange,
   onGroupChange,
   onRemarkChange,
@@ -32,6 +36,16 @@ export function ViewRenderer({
   scopedWorkflowRows,
   trendItems,
 }) {
+  const attendanceRawRows = useMemo(() => {
+    if (activeView !== "attendance") {
+      return [];
+    }
+
+    const visibleStoreIds = new Set(filteredRows.map((row) => row.storeId));
+
+    return (dataSource.attendanceDaily || []).filter((row) => row.month === month && visibleStoreIds.has(row.storeId));
+  }, [activeView, dataSource.attendanceDaily, filteredRows, month]);
+
   if (activeView === "dashboard") {
     return (
       <>
@@ -74,17 +88,27 @@ export function ViewRenderer({
       <>
         <AttendanceSummaryPanel
           availableDates={attendanceSummary.availableDates}
+          aopRows={attendanceSummary.aopRows}
+          manualAopOverrides={attendanceAopOverrides?.[month] || {}}
           selectedDate={attendanceSummary.selectedDate}
           onDateChange={onAttendanceDateChange}
+          onAopReset={onAttendanceAopReset}
+          onAopSave={onAttendanceAopSave}
           dayRows={attendanceSummary.dayRows}
           monthToDateRows={attendanceSummary.monthToDateRows}
           month={month}
         />
         <ReportInsights activeView={activeView} rows={filteredRows} dataSource={dataSource} month={month} />
         <DetailedTable
-          rows={filteredRows}
+          rows={attendanceRawRows}
           reportType={effectiveReportType}
-          onExportExcel={() => exportRowsToExcel(filteredRows, effectiveReportType, month)}
+          onExportExcel={(exportRows = attendanceRawRows, range) =>
+            exportRowsToExcel(
+              exportRows,
+              effectiveReportType,
+              range?.fromDate && range?.toDate ? `${range.fromDate}-to-${range.toDate}` : month,
+            )
+          }
           onExportPdf={exportRowsToPdf}
         />
       </>

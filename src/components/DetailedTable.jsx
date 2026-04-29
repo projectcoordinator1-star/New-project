@@ -19,7 +19,38 @@ function renderStatusBadge(value) {
   return <Badge tone="green">{value}</Badge>;
 }
 
-function getColumns(reportType) {
+function isRawAttendanceRows(rows = []) {
+  return rows.some((row) => row?.epNo || row?.attDate || row?.rawStatus);
+}
+
+function getColumns(reportType, rows = []) {
+  if (reportType === "Attendance" && isRawAttendanceRows(rows)) {
+    return [
+      { key: "epNo", label: "EP No", render: (row) => row.epNo || "--" },
+      { key: "employeeName", label: "EP Name", render: (row) => row.employeeName || "--" },
+      { key: "managerName", label: "Manager Name", render: (row) => row.managerName || "--" },
+      { key: "managerCode", label: "Manager EC No", render: (row) => row.managerCode || "--" },
+      { key: "storeId", label: "Site Code", render: (row) => row.storeId || "--" },
+      {
+        key: "storeName",
+        label: "Site Name",
+        render: (row) => (
+          <div className="store-cell">
+            <strong>{row.storeName || "--"}</strong>
+            <span>{row.location || row.region || "--"}</span>
+          </div>
+        ),
+      },
+      { key: "state", label: "State", render: (row) => row.state || row.region || "--" },
+      { key: "class", label: "Class", render: (row) => row.class || "--" },
+      { key: "attDate", label: "Att. Date", render: (row) => row.attDate || "--" },
+      { key: "rawStatus", label: "Att. Status", render: (row) => formatNumber(row.attValue ?? row.rawStatus ?? 0) },
+      { key: "inTime", label: "In Time", render: (row) => row.inTime || "--" },
+      { key: "outTime", label: "Out Time", render: (row) => row.outTime || "--" },
+      { key: "manHours", label: "Man Hours", render: (row) => row.manHours || "--" },
+    ];
+  }
+
   if (reportType === "Attendance") {
     return [
       { key: "storeId", label: "Store ID", render: (row) => row.storeId },
@@ -141,7 +172,7 @@ function getColumns(reportType) {
 
 function getRowAlert(reportType, row) {
   if (reportType === "Attendance") {
-    return (row.attendance?.presentPct ?? 0) < 90;
+    return isRawAttendanceRows([row]) ? Number(row.attValue ?? 0) === 0 : (row.attendance?.presentPct ?? 0) < 90;
   }
 
   if (reportType === "Fault Report") {
@@ -170,19 +201,54 @@ function getRowAlert(reportType, row) {
 export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) {
   const [attendanceSearch, setAttendanceSearch] = useState("");
   const [attendancePage, setAttendancePage] = useState(1);
-  const columns = getColumns(reportType);
+  const [attendanceFromDate, setAttendanceFromDate] = useState("");
+  const [attendanceToDate, setAttendanceToDate] = useState("");
+  const columns = getColumns(reportType, rows);
   const isAttendanceView = reportType === "Attendance";
+  const isRawAttendanceView = isAttendanceView && isRawAttendanceRows(rows);
   const pageSize = 20;
+  const attendanceDateOptions = useMemo(
+    () => [...new Set(rows.map((row) => row.attDate).filter(Boolean))].sort((left, right) => left.localeCompare(right)),
+    [rows],
+  );
+  const attendanceDateOptionsKey = attendanceDateOptions.join("|");
+
+  useEffect(() => {
+    if (!isRawAttendanceView || !attendanceDateOptions.length) {
+      setAttendanceFromDate("");
+      setAttendanceToDate("");
+      return;
+    }
+
+    const firstDate = attendanceDateOptions[0];
+    const lastDate = attendanceDateOptions[attendanceDateOptions.length - 1];
+
+    setAttendanceFromDate((current) => (current && current >= firstDate && current <= lastDate ? current : firstDate));
+    setAttendanceToDate((current) => (current && current >= firstDate && current <= lastDate ? current : lastDate));
+  }, [attendanceDateOptionsKey, attendanceDateOptions, isRawAttendanceView]);
 
   const filteredRows = useMemo(() => {
     if (!isAttendanceView) return rows;
     const query = attendanceSearch.trim().toLowerCase();
-    if (!query) return rows;
+    const dateFilteredRows = isRawAttendanceView
+      ? rows.filter((row) => {
+          const rowDate = row.attDate || "";
+          const matchesFrom = !attendanceFromDate || rowDate >= attendanceFromDate;
+          const matchesTo = !attendanceToDate || rowDate <= attendanceToDate;
+          return matchesFrom && matchesTo;
+        })
+      : rows;
 
-    return rows.filter((row) =>
-      `${row.storeId} ${row.storeName} ${row.region} ${row.location}`.toLowerCase().includes(query),
-    );
-  }, [rows, isAttendanceView, attendanceSearch]);
+    if (!query) return dateFilteredRows;
+
+    return dateFilteredRows.filter((row) => {
+      const searchableText = isRawAttendanceView
+        ? `${row.epNo} ${row.employeeName} ${row.managerName} ${row.managerCode} ${row.storeId} ${row.storeName} ${row.region} ${row.location} ${row.class} ${row.attDate} ${row.rawStatus}`
+        : `${row.storeId} ${row.storeName} ${row.region} ${row.location}`;
+
+      return searchableText.toLowerCase().includes(query);
+    });
+  }, [rows, isAttendanceView, isRawAttendanceView, attendanceSearch, attendanceFromDate, attendanceToDate]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const paginatedRows = useMemo(() => {
@@ -193,7 +259,7 @@ export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) 
 
   useEffect(() => {
     setAttendancePage(1);
-  }, [attendanceSearch, reportType, rows]);
+  }, [attendanceSearch, attendanceFromDate, attendanceToDate, reportType, rows]);
 
   useEffect(() => {
     if (attendancePage > totalPages) {
@@ -209,12 +275,31 @@ export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) 
           <p>
             {reportType === "All Reports"
               ? "Merged operational data linked by storeId"
+              : reportType === "Attendance"
+                ? isRawAttendanceView
+                  ? "Raw M-here BASE attendance register using the current filters"
+                  : "Focused view for attendance using the current filters"
               : `Focused view for ${reportType.toLowerCase()} using the current filters`}
           </p>
         </div>
 
         <div className="panel__actions">
-          <button type="button" className="excel-button" onClick={onExportExcel}>
+          <button
+            type="button"
+            className="excel-button"
+            onClick={() =>
+              onExportExcel(
+                filteredRows,
+                isRawAttendanceView
+                  ? {
+                      fromDate: attendanceFromDate,
+                      toDate: attendanceToDate,
+                    }
+                  : null,
+              )
+            }
+            disabled={!filteredRows.length}
+          >
             Export Excel
           </button>
           <button type="button" className="ghost-button" onClick={onExportPdf}>
@@ -230,10 +315,46 @@ export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) 
             <input
               type="search"
               value={attendanceSearch}
-              placeholder="Search by store id, store name, or region"
+              placeholder="Search EP no, employee, manager, store, class, or date"
               onChange={(event) => setAttendanceSearch(event.target.value)}
             />
           </label>
+
+          {isRawAttendanceView ? (
+            <div className="attendance-date-range">
+              <label>
+                <span>From Date</span>
+                <input
+                  type="date"
+                  value={attendanceFromDate}
+                  min={attendanceDateOptions[0] || ""}
+                  max={attendanceToDate || attendanceDateOptions[attendanceDateOptions.length - 1] || ""}
+                  onChange={(event) => setAttendanceFromDate(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input
+                  type="date"
+                  value={attendanceToDate}
+                  min={attendanceFromDate || attendanceDateOptions[0] || ""}
+                  max={attendanceDateOptions[attendanceDateOptions.length - 1] || ""}
+                  onChange={(event) => setAttendanceToDate(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setAttendanceFromDate(attendanceDateOptions[0] || "");
+                  setAttendanceToDate(attendanceDateOptions[attendanceDateOptions.length - 1] || "");
+                }}
+                disabled={!attendanceDateOptions.length}
+              >
+                Full Month
+              </button>
+            </div>
+          ) : null}
 
           <div className="attendance-pagination">
             <span>
@@ -264,7 +385,7 @@ export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) 
         </div>
       ) : (
         <div className="table-scroll">
-          <table className="data-table data-table--detail">
+          <table className={`data-table data-table--detail ${isRawAttendanceView ? "data-table--attendance-raw" : ""}`}>
             <thead>
               <tr>
                 {columns.map((column) => (
@@ -274,9 +395,9 @@ export function DetailedTable({ rows, reportType, onExportExcel, onExportPdf }) 
             </thead>
             <tbody>
               {paginatedRows.map((row, index) => (
-                <tr key={`${row.storeId}-${index}`} className={getRowAlert(reportType, row) ? "row-alert" : ""}>
+                <tr key={`${row.epNo || row.storeId}-${row.attDate || row.storeName}-${index}`} className={getRowAlert(reportType, row) ? "row-alert" : ""}>
                   {columns.map((column) => (
-                    <td key={`${row.storeId}-${column.key}`}>{column.render(row)}</td>
+                    <td key={`${row.epNo || row.storeId}-${column.key}`}>{column.render(row)}</td>
                   ))}
                 </tr>
               ))}
