@@ -141,7 +141,7 @@ select
   "Order Type" as order_type,
   "Criticality" as criticality,
   "Ageing" as ageing_text,
-  qpms_app.to_numeric_safe("Ageing(Days)") as ageing_days,
+  qpms_app.to_numeric_safe("Ageing") as ageing_days,
   "Breached Flag" as breached_flag,
   "Category" as category,
   "Sub Category" as sub_category,
@@ -151,7 +151,8 @@ select
   "AFM Name" as afm_name,
   "MEPC Name" as mepc_name,
   "HK Supervisor Name" as hk_supervisor_name,
-  "Format" as format_name
+  "Format" as format_name,
+  "Ageing(Days)" as ageing_bucket
 from qpms_raw."IFMS Dashboard.xlsx - Fault Report";
 
 create or replace view qpms_app.ol_split_server as
