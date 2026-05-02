@@ -999,13 +999,21 @@ textarea:focus-visible {
 }
 
 /* Responsive Overrides */
-@media (max-width: 1200px) {
+@media (max-width: 1024px) {
   .app-shell {
-    grid-template-columns: 80px 1fr;
+    display: flex; /* Fallback for older browsers or complex grids */
+    flex-direction: row;
   }
 
   .sidebar {
-    padding: 24px 10px;
+    width: 80px;
+    flex-shrink: 0;
+    padding: 20px 8px;
+  }
+
+  .content {
+    flex-grow: 1;
+    min-width: 0; /* Prevent content from overflowing flex container */
   }
 
   .brand h1,
@@ -1020,6 +1028,8 @@ textarea:focus-visible {
 
   .sidebar__icon {
     margin: 0 auto;
+    width: 32px;
+    height: 32px;
   }
 
   .insight-grid {
@@ -1028,6 +1038,11 @@ textarea:focus-visible {
 }
 
 @media (max-width: 992px) {
+  .app-shell {
+    display: grid; /* Revert to grid for tablet/mobile where sidebar is fixed */
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     grid-template-columns: 1fr;
     position: relative;

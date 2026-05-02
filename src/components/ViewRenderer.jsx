@@ -12,7 +12,6 @@ import { StoreMasterWorkspace } from "./StoreMasterWorkspace";
 import { TrendPanel } from "./TrendPanel";
 import { WorkflowTrackerPanel } from "./WorkflowTrackerPanel";
 import { PoRequestLab } from "./po/PoRequestLab";
-import { TechnicalTrainingWorkspace } from "./TechnicalTrainingWorkspace";
 
 export function ViewRenderer({
   activeFilters,
@@ -33,7 +32,6 @@ export function ViewRenderer({
   onGroupChange,
   onRemarkChange,
   onStageChange,
-  onStoreUpdate,
   onStoreStatusChange,
   pivotRows,
   scopedReportRows,
@@ -83,19 +81,8 @@ export function ViewRenderer({
     return <PoRequestLab />;
   }
 
-  if (activeView === "training") {
-    return <TechnicalTrainingWorkspace stores={dataSource.stores} />;
-  }
-
   if (activeView === "stores") {
-    return (
-      <StoreMasterWorkspace
-        stores={dataSource.stores}
-        onAddStore={onAddStore}
-        onStatusChange={onStoreStatusChange}
-        onUpdateStore={onStoreUpdate}
-      />
-    );
+    return <StoreMasterWorkspace stores={dataSource.stores} onAddStore={onAddStore} onStatusChange={onStoreStatusChange} />;
   }
 
   if (activeView === "attendance") {
@@ -163,20 +150,6 @@ export function ViewRenderer({
       <>
         <ReportInsights activeView={activeView} rows={filteredRows} dataSource={dataSource} month={month} />
         <DeepCleaningImagePanel rows={filteredRows} masterStores={dataSource.stores} filters={activeFilters} />
-        <DetailedTable
-          rows={filteredRows}
-          reportType={effectiveReportType}
-          onExportExcel={() => exportRowsToExcel(filteredRows, effectiveReportType, month)}
-          onExportPdf={exportRowsToPdf}
-        />
-      </>
-    );
-  }
-
-  if (["faults", "ol", "thermography", "manpower", "cleaning", "cmpm"].includes(activeView)) {
-    return (
-      <>
-        <ReportInsights activeView={activeView} rows={filteredRows} dataSource={dataSource} month={month} />
         <DetailedTable
           rows={filteredRows}
           reportType={effectiveReportType}
