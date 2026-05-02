@@ -11,6 +11,7 @@ import {
   fetchDeepCleaningEvidence,
 } from "./db/deepCleaningEvidence.js";
 import { createMasterStore, updateMasterStoreStatus } from "./db/masterStores.js";
+import { updateFaultStatus, ensureFaultUpdatesSchema } from "./db/faults.js";
 import {
   createTrainingEvidence,
   deleteTrainingEvidence,
@@ -39,6 +40,10 @@ ensureTrainingSchema(pool).catch((error) => {
 
 ensureDeepCleaningEvidenceSchema(pool).catch((error) => {
   console.warn("Unable to prepare deep cleaning evidence schema:", error.message);
+});
+
+ensureFaultUpdatesSchema(pool).catch((error) => {
+  console.warn("Unable to prepare fault status updates schema:", error.message);
 });
 
 function sendJson(response, statusCode, payload) {
@@ -239,6 +244,14 @@ const server = http.createServer(async (request, response) => {
       const payload = await readJsonBody(request);
       const result = await updateMasterStoreStatus(pool, storeCode, payload);
       sendJson(response, 200, result);
+      return;
+    }
+
+    if (request.method === "PATCH" && pathname.startsWith("/api/workflow/faults/")) {
+      const ticketNumber = decodeURIComponent(pathname.replace("/api/workflow/faults/", "").replace("/remark", ""));
+      const payload = await readJsonBody(request);
+      const result = await updateFaultStatus(pool, ticketNumber, payload.remark);
+      sendJson(response, 200, { ok: true, result });
       return;
     }
 

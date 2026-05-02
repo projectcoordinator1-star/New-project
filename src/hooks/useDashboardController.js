@@ -28,6 +28,7 @@ import {
   updateMasterStoreStatus,
 } from "../services/dashboardGateway";
 import { syncFilesToRawDatabase } from "../services/rawDatabaseSync";
+import { updateFaultRemark } from "../services/workflowService";
 
 const FILTERABLE_VIEWS = [
   "dashboard",
@@ -1375,11 +1376,26 @@ export function useDashboardController() {
     }));
   };
 
-  const handleRemarkChange = (ticketNumber, remark) => {
+  const handleRemarkChange = async (ticketNumber, remark) => {
+    // Update local state for immediate feedback
     setFaultRemarks((current) => ({
       ...current,
       [ticketNumber]: remark,
     }));
+
+    // If we are in database mode, persist to DB
+    if (dataInfo.mode === "database") {
+      try {
+        await updateFaultRemark(ticketNumber, remark);
+      } catch (error) {
+        console.error("Failed to persist fault remark:", error);
+        // Optionally revert local state or show error
+        setDataInfo((current) => ({
+          ...current,
+          error: `Failed to save status update to database: ${error.message}`,
+        }));
+      }
+    }
   };
 
   const handleProcessWorkflow = async (nextView = "dashboard") => {

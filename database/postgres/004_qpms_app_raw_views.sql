@@ -193,8 +193,9 @@ select
   fault_import.imported_date as report_date,
   fault_import.imported_date as as_of_date,
   fault_import.imported_at as imported_at,
-  faults."Status__2" as status_note
+  coalesce(updates.status_note, faults."Status__2") as status_note
 from qpms_raw."IFMS Dashboard.xlsx - Fault Report" faults
+left join qpms.fault_status_updates updates on updates.ticket_number = faults."Ticket Number"
 left join lateral (
   select
     imported_at,

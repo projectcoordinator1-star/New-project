@@ -146,8 +146,8 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                 <th>Ageing</th>
                 <th>{isFaultReport ? "Status" : "Criticality"}</th>
                 <th>Breached</th>
-                <th>{isFaultReport ? "Status_2 / Remarks" : "Scope"}</th>
-                <th>{reportType === "OL Report" ? "Status Bar" : "Update"}</th>
+                {!isFaultReport && <th>Scope</th>}
+                <th>{isFaultReport ? "Status_2 / Remarks Update" : (reportType === "OL Report" ? "Status Bar" : "Update")}</th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +171,7 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                     <td>{formatNumber(row.ageingDays)}</td>
                     <td>{isFaultReport ? row.status || "" : row.criticality || "NA"}</td>
                     <td>{row.breachedFlag || ""}</td>
-                    <td>{isFaultReport ? remarkValue : scopeLabel}</td>
+                    {!isFaultReport && <td>{scopeLabel}</td>}
                     <td>
                       {reportType === "OL Report" ? (
                         <select
@@ -191,13 +191,34 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                             );
                           })}
                         </select>
+                      ) : isFaultReport ? (
+                        <input
+                          type="text"
+                          className="workflow-inline-input"
+                          key={`${row.ticketNumber}-${remarkValue}`}
+                          defaultValue={remarkValue}
+                          placeholder="Update Status_2..."
+                          onBlur={(e) => {
+                            if (e.target.value !== remarkValue) {
+                              onRemarkChange(row.ticketNumber, e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (e.target.value !== remarkValue) {
+                                onRemarkChange(row.ticketNumber, e.target.value);
+                              }
+                              e.target.blur();
+                            }
+                          }}
+                        />
                       ) : (
                         <button
                           type="button"
                           className="remark-button is-editable"
                           onClick={() => setActiveRemarkRow(row)}
                         >
-                          <strong>{isFaultReport ? "Edit Status_2" : "Update Status"}</strong>
+                          <strong>Update Status</strong>
                           <span>{remarkValue}</span>
                         </button>
                       )}

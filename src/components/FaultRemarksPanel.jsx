@@ -15,9 +15,9 @@ function FaultRemarkCard({ row, remark, editable, onRemarkChange }) {
 
       <textarea
         value={remark}
-        onChange={(event) => onRemarkChange(row.ticketNumber, event.target.value)}
+        onChange={(event) => onRemarkChange && onRemarkChange(row.ticketNumber, event.target.value)}
         placeholder={editable ? "Add MIS update, blocker, vendor note, or next action..." : "Remarks visible in read-only mode"}
-        disabled={!editable}
+        disabled={!editable || !onRemarkChange}
         rows={4}
       />
     </article>
@@ -45,7 +45,7 @@ export function FaultRemarksPanel({ rows, roleLabel, editable, remarks, onRemark
         <div className="fault-remarks-grid">
           {rows.slice(0, 18).map((row) => (
             <FaultRemarkCard
-              key={row.ticketNumber}
+              key={row.ticketNumber || row.storeId}
               row={row}
               remark={remarks[row.ticketNumber] || ""}
               editable={editable}

@@ -2967,6 +2967,29 @@ textarea:focus-visible {
   cursor: not-allowed;
 }
 
+.workflow-inline-input {
+  width: 100%;
+  min-width: 180px;
+  border: 1px solid #d8e4f1;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  background: #f8fbff;
+  color: #22324a;
+  transition: all 180ms ease;
+}
+
+.workflow-inline-input:focus {
+  background: #fff;
+  border-color: #4f8ff7;
+  box-shadow: 0 0 0 3px rgba(79, 143, 247, 0.1);
+}
+
+.workflow-inline-input::placeholder {
+  color: #a0aec0;
+  font-size: 0.8rem;
+}
+
 .remark-button {
   width: 100%;
   min-width: 170px;
@@ -3004,7 +3027,7 @@ textarea:focus-visible {
 .workflow-modal {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 9999;
   display: grid;
   place-items: center;
   padding: 24px;
