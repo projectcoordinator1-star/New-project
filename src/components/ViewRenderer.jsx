@@ -12,6 +12,7 @@ import { StoreMasterWorkspace } from "./StoreMasterWorkspace";
 import { TrendPanel } from "./TrendPanel";
 import { WorkflowTrackerPanel } from "./WorkflowTrackerPanel";
 import { PoRequestLab } from "./po/PoRequestLab";
+import { TechnicalTrainingWorkspace } from "./TechnicalTrainingWorkspace";
 
 export function ViewRenderer({
   activeFilters,
@@ -32,6 +33,7 @@ export function ViewRenderer({
   onGroupChange,
   onRemarkChange,
   onStageChange,
+  onStoreUpdate,
   onStoreStatusChange,
   pivotRows,
   scopedReportRows,
@@ -81,8 +83,19 @@ export function ViewRenderer({
     return <PoRequestLab />;
   }
 
+  if (activeView === "training") {
+    return <TechnicalTrainingWorkspace stores={dataSource.stores} />;
+  }
+
   if (activeView === "stores") {
-    return <StoreMasterWorkspace stores={dataSource.stores} onAddStore={onAddStore} onStatusChange={onStoreStatusChange} />;
+    return (
+      <StoreMasterWorkspace
+        stores={dataSource.stores}
+        onAddStore={onAddStore}
+        onStatusChange={onStoreStatusChange}
+        onUpdateStore={onStoreUpdate}
+      />
+    );
   }
 
   if (activeView === "attendance") {
