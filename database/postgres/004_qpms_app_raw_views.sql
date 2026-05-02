@@ -12,6 +12,26 @@ as $$
   end
 $$;
 
+create or replace function qpms_app.date_from_text(value text)
+returns date
+language sql
+immutable
+as $$
+  select case
+    when coalesce(value, '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+      then substring(value from 1 for 10)::date
+    when coalesce(value, '') ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}$'
+      then to_date(value, 'MM/DD/YY')
+    when coalesce(value, '') ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
+      then to_date(value, 'MM/DD/YYYY')
+    when coalesce(value, '') ~ '^[0-9]{2}-[0-9]{2}-[0-9]{4}'
+      then to_date(substring(value from 1 for 10), 'DD-MM-YYYY')
+    when coalesce(value, '') ~ '^[A-Za-z]{3}-[0-9]{4}$'
+      then to_date('01-' || value, 'DD-Mon-YYYY')
+    else null
+  end
+$$;
+
 create or replace function qpms_app.month_from_text(value text)
 returns text
 language sql
@@ -20,14 +40,8 @@ as $$
   select case
     when coalesce(value, '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
       then substring(value from 1 for 7)
-    when coalesce(value, '') ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}$'
-      then to_char(to_date(value, 'MM/DD/YY'), 'YYYY-MM')
-    when coalesce(value, '') ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
-      then to_char(to_date(value, 'MM/DD/YYYY'), 'YYYY-MM')
-    when coalesce(value, '') ~ '^[0-9]{2}-[0-9]{2}-[0-9]{4}'
-      then to_char(to_date(substring(value from 1 for 10), 'DD-MM-YYYY'), 'YYYY-MM')
-    when coalesce(value, '') ~ '^[A-Za-z]{3}-[0-9]{4}$'
-      then to_char(to_date('01-' || value, 'DD-Mon-YYYY'), 'YYYY-MM')
+    when qpms_app.date_from_text(value) is not null
+      then to_char(qpms_app.date_from_text(value), 'YYYY-MM')
     else null
   end
 $$;
@@ -128,32 +142,69 @@ from qpms_app.attendance_raw
 where month_key is not null
 group by month_key, state_group, class_code;
 
+create or replace view qpms_app.attendance_store_month_summary as
+select
+  store_id,
+  store_name,
+  state_group,
+  month_key,
+  count(*) as total_rows,
+  sum(case when attendance_value > 0 then 1 else 0 end) as present_rows,
+  count(distinct ep_no) as employee_count,
+  sum(attendance_value) as mandays
+from qpms_app.attendance_raw
+where month_key is not null
+group by store_id, store_name, state_group, month_key;
+
 create or replace view qpms_app.fault_report as
 select
-  "Ticket Number" as ticket_number,
-  "Created At" as created_at,
-  coalesce(qpms_app.month_from_text("Month"), qpms_app.month_from_text("Created At")) as month_key,
-  "Store ID" as store_id,
-  "Store Name" as store_name,
-  coalesce("State__2", "State") as state_group,
-  "Address City" as city,
-  "Status" as status,
-  "Order Type" as order_type,
-  "Criticality" as criticality,
-  "Ageing" as ageing_text,
-  qpms_app.to_numeric_safe("Ageing") as ageing_days,
-  "Breached Flag" as breached_flag,
-  "Category" as category,
-  "Sub Category" as sub_category,
-  "Issue Type" as issue_type,
-  "Issue Title" as issue_title,
-  "Manager Name" as manager_name,
-  "AFM Name" as afm_name,
-  "MEPC Name" as mepc_name,
-  "HK Supervisor Name" as hk_supervisor_name,
-  "Format" as format_name,
-  "Ageing(Days)" as ageing_bucket
-from qpms_raw."IFMS Dashboard.xlsx - Fault Report";
+  faults."Ticket Number" as ticket_number,
+  faults."Created At" as created_at,
+  coalesce(
+    qpms_app.month_from_text(faults."Month"),
+    qpms_app.month_from_text(faults."Created At"),
+    case
+      when fault_import.imported_date is not null and qpms_app.to_numeric_safe(faults."Ageing") is not null
+        then to_char((fault_import.imported_date - (qpms_app.to_numeric_safe(faults."Ageing")::integer * interval '1 day'))::date, 'YYYY-MM')
+      else null
+    end,
+    fault_import.import_month
+  ) as month_key,
+  faults."Store ID" as store_id,
+  faults."Store Name" as store_name,
+  coalesce(faults."State__2", faults."State") as state_group,
+  faults."Address City" as city,
+  faults."Status" as status,
+  faults."Order Type" as order_type,
+  faults."Criticality" as criticality,
+  faults."Ageing" as ageing_text,
+  qpms_app.to_numeric_safe(faults."Ageing") as ageing_days,
+  faults."Breached Flag" as breached_flag,
+  faults."Category" as category,
+  faults."Sub Category" as sub_category,
+  faults."Issue Type" as issue_type,
+  faults."Issue Title" as issue_title,
+  faults."Manager Name" as manager_name,
+  faults."AFM Name" as afm_name,
+  faults."MEPC Name" as mepc_name,
+  faults."HK Supervisor Name" as hk_supervisor_name,
+  faults."Format" as format_name,
+  faults."Ageing(Days)" as ageing_bucket,
+  fault_import.imported_date as report_date,
+  fault_import.imported_date as as_of_date,
+  fault_import.imported_at as imported_at,
+  faults."Status__2" as status_note
+from qpms_raw."IFMS Dashboard.xlsx - Fault Report" faults
+left join lateral (
+  select
+    imported_at,
+    imported_at::date as imported_date,
+    to_char(imported_at::date, 'YYYY-MM') as import_month
+  from qpms_import.import_sheet
+  where raw_table_name = 'IFMS Dashboard.xlsx - Fault Report'
+  order by imported_at desc
+  limit 1
+) fault_import on true;
 
 create or replace view qpms_app.ol_split_server as
 select
@@ -187,6 +238,53 @@ select
   "Aditional Remark" as additional_remark,
   "Setoff Status" as setoff_status
 from qpms_raw."IFMS Dashboard.xlsx - Split Server";
+
+create or replace view qpms_app.ol_store_month_summary as
+select
+  store_id,
+  store_name,
+  state_group,
+  month_key,
+  sum(case when is_closed_stage then 0 else 1 end)::int as open_jobs,
+  sum(
+    case
+      when is_closed_stage or po_date_value is null or current_date - po_date_value <= 30 then 0
+      else 1
+    end
+  )::int as overdue_jobs,
+  to_char(max(po_date_value), 'YYYY-MM-DD') as last_raised_date
+from (
+  select
+    store_id,
+    site as store_name,
+    state_group,
+    month_key,
+    qpms_app.date_from_text(po_date) as po_date_value,
+    case
+      when stage_text like '%NEED TO DELETE%' or stage_text like '%PO TO BE DELETE%' then true
+      when stage_text like '%PO DELETED%' then true
+      when stage_text like '%PAYMENT RECEIVED%' then true
+      else false
+    end as is_closed_stage
+  from (
+    select
+      store_id,
+      site,
+      state_group,
+      month_key,
+      po_date,
+      concat_ws(
+        ' | ',
+        nullif(upper(coalesce(remark, '')), ''),
+        nullif(upper(coalesce(additional_remark, '')), ''),
+        nullif(upper(coalesce(setoff_status, '')), '')
+      ) as stage_text
+    from qpms_app.ol_split_server
+  ) ol_rows
+) grouped_rows
+where store_id is not null
+  and month_key is not null
+group by store_id, store_name, state_group, month_key;
 
 create or replace view qpms_app.cmpm_report as
 select

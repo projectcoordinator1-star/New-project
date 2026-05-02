@@ -22,6 +22,8 @@ export const defaultDataSource = {
   faultTickets: [],
   olTickets: [],
   cmpm: [],
+  faultValidation: null,
+  faultDebug: null,
 };
 
 // Keep this for fallback/demo mode only

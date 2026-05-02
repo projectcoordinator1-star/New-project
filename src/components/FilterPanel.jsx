@@ -1,5 +1,9 @@
 export function FilterPanel({ options, filters, onChange, onReset, showReportType = true, lockedReportLabel = "", resultsCount = 0 }) {
   const formatMonth = (value) => {
+    if (value === "ALL_MONTHS") {
+      return "All Months";
+    }
+
     if (!/^\d{4}-\d{2}$/.test(String(value))) {
       return value;
     }

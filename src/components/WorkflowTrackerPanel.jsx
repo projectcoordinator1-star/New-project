@@ -34,6 +34,7 @@ function getLifecycleTone(index) {
 }
 
 export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageChange, remarks = {}, onRemarkChange }) {
+  const isFaultReport = reportType === "Fault Report";
   const counts = groupCounts(rows);
   const roleConfig = getRoleConfig(currentRole);
   const [activeRemarkRow, setActiveRemarkRow] = useState(null);
@@ -49,7 +50,7 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
       return;
     }
 
-    setDraftRemark(remarks[activeRemarkRow.ticketNumber] || "");
+    setDraftRemark(activeRemarkRow.remark ?? remarks[activeRemarkRow.ticketNumber] ?? activeRemarkRow.statusNote ?? "");
   }, [activeRemarkRow, remarks]);
 
   useEffect(() => {
@@ -67,11 +68,18 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
     return () => window.removeEventListener("keydown", handleEscape);
   }, [activeRemarkRow]);
 
-  const title = reportType === "Fault Report" ? "Fault Job Lifecycle" : "OL Commercial Tracker";
+  const title = isFaultReport ? "Fault Status Tracker" : "OL Commercial Tracker";
   const subtitle =
-    reportType === "Fault Report"
-      ? "Use the remarks action to capture the latest fault status without leaving the tracker."
+    isFaultReport
+      ? "Shows every imported fault ticket in scope. Status_2 values are displayed as remarks and can be updated inline."
       : "The dropdown shows the full lifecycle, but teams can move jobs only inside their own hierarchy stages.";
+  const visibleRows = isFaultReport ? sortedRows : sortedRows.slice(0, 50);
+  const faultStatusCoverage = isFaultReport
+    ? {
+        filled: rows.filter((row) => String(row.remark ?? row.statusNote ?? "").trim()).length,
+        blank: rows.filter((row) => !String(row.remark ?? row.statusNote ?? "").trim()).length,
+      }
+    : null;
 
   const closeRemarkModal = () => {
     setActiveRemarkRow(null);
@@ -94,26 +102,37 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
           <h3>{title}</h3>
           <p>{subtitle}</p>
         </div>
-        <div className="workflow-panel__role">
-          <strong>{roleConfig.label}</strong>
-          <span>Visible through stage {roleConfig.visibleMaxStage}</span>
-        </div>
+        {isFaultReport ? (
+          <div className="workflow-panel__role">
+            <strong>{rows.length} Tickets Visible</strong>
+            <span>
+              {faultStatusCoverage?.filled || 0} with Status_2 notes | {faultStatusCoverage?.blank || 0} blank
+            </span>
+          </div>
+        ) : (
+          <div className="workflow-panel__role">
+            <strong>{roleConfig.label}</strong>
+            <span>Visible through stage {roleConfig.visibleMaxStage}</span>
+          </div>
+        )}
       </div>
 
-      <div className="workflow-board">
-        {counts.map((item) => (
-          <article key={item.stage} className={`workflow-stage workflow-stage--${getLifecycleTone(item.index)}`}>
-            <span className="workflow-stage__step">{item.index}</span>
-            <strong>{formatNumber(item.count)}</strong>
-            <p>{item.stage}</p>
-          </article>
-        ))}
-      </div>
+      {!isFaultReport ? (
+        <div className="workflow-board">
+          {counts.map((item) => (
+            <article key={item.stage} className={`workflow-stage workflow-stage--${getLifecycleTone(item.index)}`}>
+              <span className="workflow-stage__step">{item.index}</span>
+              <strong>{formatNumber(item.count)}</strong>
+              <p>{item.stage}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       {sortedRows.length === 0 ? (
         <div className="empty-state">
-          <strong>No workflow jobs match the current role, month, and filters.</strong>
-          <p>Jobs beyond your stage scope are hidden automatically.</p>
+          <strong>{isFaultReport ? "No fault tickets match the current month and filters." : "No workflow jobs match the current role, month, and filters."}</strong>
+          <p>{isFaultReport ? "Try changing the month, store, or search filters." : "Jobs beyond your stage scope are hidden automatically."}</p>
         </div>
       ) : (
         <div className="table-scroll">
@@ -125,18 +144,18 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                 <th>Issue</th>
                 <th>Category</th>
                 <th>Ageing</th>
-                <th>Criticality</th>
+                <th>{isFaultReport ? "Status" : "Criticality"}</th>
                 <th>Breached</th>
-                <th>Scope</th>
-                <th>{reportType === "OL Report" ? "Status Bar" : "Remarks"}</th>
+                <th>{isFaultReport ? "Status_2 / Remarks" : "Scope"}</th>
+                <th>{reportType === "OL Report" ? "Status Bar" : "Update"}</th>
               </tr>
             </thead>
             <tbody>
-              {sortedRows.slice(0, 50).map((row) => {
+              {visibleRows.map((row) => {
                 const stageIndex = getStageIndex(row.workflowStage);
-                const rowEditable = canRoleEditStage(currentRole, stageIndex);
+                const rowEditable = isFaultReport ? true : canRoleEditStage(currentRole, stageIndex);
                 const scopeLabel = getScopeLabel(currentRole, stageIndex);
-                const remarkValue = remarks[row.ticketNumber] || "";
+                const remarkValue = row.remark ?? remarks[row.ticketNumber] ?? row.statusNote ?? "";
 
                 return (
                   <tr key={row.ticketNumber}>
@@ -147,12 +166,12 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                         <span>{row.storeId}</span>
                       </div>
                     </td>
-                    <td>{row.issueTitle || "Issue not provided"}</td>
-                    <td>{row.category || "Unknown"}</td>
+                    <td>{row.issueTitle || ""}</td>
+                    <td>{row.category || ""}</td>
                     <td>{formatNumber(row.ageingDays)}</td>
-                    <td>{row.criticality || "NA"}</td>
-                    <td>{row.breachedFlag || "No"}</td>
-                    <td>{scopeLabel}</td>
+                    <td>{isFaultReport ? row.status || "" : row.criticality || "NA"}</td>
+                    <td>{row.breachedFlag || ""}</td>
+                    <td>{isFaultReport ? remarkValue : scopeLabel}</td>
                     <td>
                       {reportType === "OL Report" ? (
                         <select
@@ -175,11 +194,11 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
                       ) : (
                         <button
                           type="button"
-                          className={`remark-button ${roleConfig.canEditFaultRemarks ? "is-editable" : "is-readonly"}`}
+                          className="remark-button is-editable"
                           onClick={() => setActiveRemarkRow(row)}
                         >
-                          <strong>{roleConfig.canEditFaultRemarks ? "Edit Status" : "View Status"}</strong>
-                          <span>{remarkValue ? "Update saved" : "Add current fault note"}</span>
+                          <strong>{isFaultReport ? "Edit Status_2" : "Update Status"}</strong>
+                          <span>{remarkValue}</span>
                         </button>
                       )}
                     </td>
@@ -197,10 +216,11 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
           <div className="workflow-modal__card" role="dialog" aria-modal="true" aria-labelledby="fault-remark-title">
             <div className="workflow-modal__header">
               <div>
-                <p className="eyebrow">Fault Status Update</p>
+                <p className="eyebrow">{isFaultReport ? "Fault Status Update" : "Workflow Status Update"}</p>
                 <h3 id="fault-remark-title">{activeRemarkRow.storeName}</h3>
                 <p>
-                  {activeRemarkRow.ticketNumber} | {activeRemarkRow.storeId} | Stage {getStageIndex(activeRemarkRow.workflowStage)}
+                  {activeRemarkRow.ticketNumber} | {activeRemarkRow.storeId}
+                  {isFaultReport ? "" : ` | Stage ${getStageIndex(activeRemarkRow.workflowStage)}`}
                 </p>
               </div>
               <button type="button" className="ghost-button" onClick={closeRemarkModal}>
@@ -212,25 +232,21 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
               <div className="workflow-modal__meta">
                 <span>
                   <b>Issue</b>
-                  {activeRemarkRow.issueTitle || "Issue not provided"}
+                  {activeRemarkRow.issueTitle || ""}
                 </span>
                 <span>
-                  <b>Current Stage</b>
-                  {activeRemarkRow.workflowStage}
+                  <b>{isFaultReport ? "Current Status" : "Current Stage"}</b>
+                  {isFaultReport ? activeRemarkRow.status || "" : activeRemarkRow.workflowStage}
                 </span>
               </div>
 
               <label className="workflow-modal__field">
-                <span>Remarks</span>
+                <span>{isFaultReport ? "Status_2 / Remarks" : "Remarks"}</span>
                 <textarea
                   value={draftRemark}
                   onChange={(event) => setDraftRemark(event.target.value)}
-                  placeholder={
-                    roleConfig.canEditFaultRemarks
-                      ? "Add the latest fault status, blocker, team update, or next action..."
-                      : "Remarks are visible in read-only mode for this role."
-                  }
-                  disabled={!roleConfig.canEditFaultRemarks}
+                  placeholder={isFaultReport ? "" : "Add the latest fault status, blocker, team update, or next action..."}
+                  disabled={false}
                   rows={6}
                 />
               </label>
@@ -240,8 +256,8 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
               <button type="button" className="ghost-button" onClick={closeRemarkModal}>
                 Cancel
               </button>
-              <button type="button" className="primary-button" onClick={saveRemark} disabled={!roleConfig.canEditFaultRemarks}>
-                Save Remark
+              <button type="button" className="primary-button" onClick={saveRemark}>
+                {isFaultReport ? "Save Status_2" : "Save"}
               </button>
             </div>
           </div>

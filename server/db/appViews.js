@@ -82,6 +82,30 @@ const REPORT_DEFINITIONS = {
     searchColumns: ["month_key", "state_group", "class_code"],
     orderBy: ["month_key", "state_group", "class_code"],
   },
+  "attendance-store-month": {
+    label: "Attendance Summary by Store and Month",
+    view: "attendance_store_month_summary",
+    defaultLimit: 5000,
+    filters: {
+      month: "month_key",
+      state: "state_group",
+      storeId: "store_id",
+    },
+    searchColumns: ["store_id", "store_name", "state_group", "month_key"],
+    orderBy: ["month_key", "state_group", "store_id"],
+  },
+  "ol-store-month": {
+    label: "OL Summary by Store and Month",
+    view: "ol_store_month_summary",
+    defaultLimit: 5000,
+    filters: {
+      month: "month_key",
+      state: "state_group",
+      storeId: "store_id",
+    },
+    searchColumns: ["store_id", "store_name", "state_group", "month_key"],
+    orderBy: ["month_key", "state_group", "store_id"],
+  },
   faults: {
     label: "Fault Report",
     view: "fault_report",
@@ -180,6 +204,8 @@ const REPORT_DEFINITIONS = {
 const REPORT_ALIASES = {
   fault: "faults",
   "fault-report": "faults",
+  "attendance-monthly": "attendance-store-month",
+  "ol-monthly": "ol-store-month",
   "ol-report": "ol",
   "split-server": "ol",
   "cmpm-report": "cmpm",
@@ -264,6 +290,7 @@ export async function fetchReportRows(pool, reportKey, searchParams = new URLSea
   const definition = getReportDefinition(reportKey);
   const limit = toPositiveInt(searchParams.get("limit"), definition.defaultLimit || DEFAULT_LIMIT, definition.maxLimit || MAX_LIMIT);
   const offset = toNonNegativeInt(searchParams.get("offset"));
+  const includeCount = !["0", "false", "no"].includes(String(searchParams.get("includeCount") || "").toLowerCase());
   const { appliedFilters, params, whereSql } = buildWhereClause(definition, searchParams);
   const orderSql = buildOrderBy(definition);
   const countSql = `select count(*)::int as total_count from ${relationRef(definition.view, definition.schema)} ${whereSql}`;
@@ -277,7 +304,7 @@ export async function fetchReportRows(pool, reportKey, searchParams = new URLSea
   `;
 
   const [countResult, dataResult] = await Promise.all([
-    pool.query(countSql, params),
+    includeCount ? pool.query(countSql, params) : Promise.resolve({ rows: [{ total_count: null }] }),
     pool.query(dataSql, [...params, limit, offset]),
   ]);
 
@@ -285,7 +312,7 @@ export async function fetchReportRows(pool, reportKey, searchParams = new URLSea
     ok: true,
     reportKey: definition.key,
     reportName: definition.label,
-    totalRows: countResult.rows[0]?.total_count || 0,
+    totalRows: countResult.rows[0]?.total_count ?? null,
     limit,
     offset,
     appliedFilters,

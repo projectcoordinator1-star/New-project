@@ -15,15 +15,24 @@ const DATA_SOURCE_ARRAY_FIELDS = [
   "olTickets",
   "cmpm",
 ];
+const DATA_SOURCE_OBJECT_FIELDS = ["faultValidation", "faultDebug"];
 
 function cloneItems(items = []) {
   return items.map((item) => ({ ...item }));
 }
 
 function normalizeDataSource(input = {}) {
-  return Object.fromEntries(
+  const arrays = Object.fromEntries(
     DATA_SOURCE_ARRAY_FIELDS.map((field) => [field, cloneItems(input[field] || defaultDataSource[field] || [])]),
   );
+  const objects = Object.fromEntries(
+    DATA_SOURCE_OBJECT_FIELDS.map((field) => [field, input[field] || defaultDataSource[field] || null]),
+  );
+
+  return {
+    ...arrays,
+    ...objects,
+  };
 }
 
 export function createDemoSession() {
@@ -82,6 +91,7 @@ export function createDatabaseSession(snapshot, metadata = {}) {
 
 const BASE_URL = "http://localhost:8787";
 const DB_PAGE_SIZE = 5000;
+const PARALLEL_PAGE_BATCH = 4;
 
 function buildParams(filters = {}) {
   const params = new URLSearchParams();
@@ -101,8 +111,11 @@ function buildParams(filters = {}) {
   return params;
 }
 
-async function fetchReportPage(reportKey, filters = {}) {
+async function fetchReportPage(reportKey, filters = {}, options = {}) {
   const params = buildParams(filters);
+  if (options.includeCount === false) {
+    params.append("includeCount", "0");
+  }
   const res = await fetch(`${BASE_URL}/api/reports/${reportKey}?${params}`);
 
   if (!res.ok) {
@@ -113,7 +126,7 @@ async function fetchReportPage(reportKey, filters = {}) {
 
   return {
     rows: data.rows || [],
-    totalRows: data.totalRows ?? data.rows?.length ?? 0,
+    totalRows: data.totalRows ?? null,
     limit: data.limit,
     offset: data.offset,
     reportName: data.reportName,
@@ -122,30 +135,55 @@ async function fetchReportPage(reportKey, filters = {}) {
 
 export async function fetchReport(reportKey, filters = {}, options = {}) {
   if (!options.all) {
-    const page = await fetchReportPage(reportKey, filters);
+    const page = await fetchReportPage(reportKey, filters, { includeCount: options.includeCount });
     return page.rows;
   }
 
   const pageSize = options.pageSize || DB_PAGE_SIZE;
-  const rows = [];
-  let offset = 0;
-  let totalRows = null;
-
-  do {
-    const page = await fetchReportPage(reportKey, {
+  const firstPage = await fetchReportPage(
+    reportKey,
+    {
       ...filters,
       limit: pageSize,
-      offset,
-    });
+      offset: 0,
+    },
+    { includeCount: true },
+  );
 
-    rows.push(...page.rows);
-    totalRows = page.totalRows;
-    offset += page.rows.length;
+  const rows = [...firstPage.rows];
+  const totalRows = firstPage.totalRows ?? firstPage.rows.length;
 
-    if (!page.rows.length) {
-      break;
-    }
-  } while (totalRows === null || rows.length < totalRows);
+  if (rows.length >= totalRows) {
+    return rows;
+  }
+
+  const offsets = [];
+  for (let offset = rows.length; offset < totalRows; offset += pageSize) {
+    offsets.push(offset);
+  }
+
+  for (let index = 0; index < offsets.length; index += PARALLEL_PAGE_BATCH) {
+    const batchOffsets = offsets.slice(index, index + PARALLEL_PAGE_BATCH);
+    const pages = await Promise.all(
+      batchOffsets.map((offset) =>
+        fetchReportPage(
+          reportKey,
+          {
+            ...filters,
+            limit: pageSize,
+            offset,
+          },
+          { includeCount: false },
+        ),
+      ),
+    );
+
+    pages
+      .sort((left, right) => (left.offset || 0) - (right.offset || 0))
+      .forEach((page) => {
+        rows.push(...page.rows);
+      });
+  }
 
   return rows;
 }
@@ -196,14 +234,18 @@ export async function createMasterStore(store) {
   return parseJsonResponse(response, "Failed to create store");
 }
 
-export async function updateMasterStoreStatus(storeCode, status) {
+export async function updateMasterStoreDetails(storeCode, updates = {}) {
   const response = await fetch(`${BASE_URL}/api/master/stores/${encodeURIComponent(storeCode)}`, {
     method: "PATCH",
     headers: {
       "content-type": "application/json",
     },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(updates),
   });
 
-  return parseJsonResponse(response, "Failed to update store status");
+  return parseJsonResponse(response, "Failed to update store details");
+}
+
+export async function updateMasterStoreStatus(storeCode, status) {
+  return updateMasterStoreDetails(storeCode, { status });
 }

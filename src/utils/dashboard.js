@@ -4,6 +4,11 @@ import { roundNumber } from "./formatters";
 import { OPERATIONAL_STATE_ORDER, normalizeOperationalState, sortOperationalStates } from "./stateGroups";
 
 const safeNumber = (value) => (Number.isFinite(value) ? value : 0);
+export const ALL_MONTHS = "ALL_MONTHS";
+
+export function isAllMonthsValue(value) {
+  return value === ALL_MONTHS;
+}
 
 export const viewReportTypeMap = {
   dashboard: "All Reports",
@@ -16,6 +21,7 @@ export const viewReportTypeMap = {
   manpower: "Manpower",
   cleaning: "Deep Cleaning",
   cmpm: "CMPM",
+  training: "Technical Training",
   stores: "Stores",
   "data-sync": "All Reports",
 };
@@ -84,6 +90,12 @@ export const viewMeta = {
     description: "Track CM task completion and PM status by store from the IFMS Dashboard CMPM sheet.",
     badge: "Useful for store-wise preventive and corrective maintenance follow-up.",
   },
+  training: {
+    eyebrow: "Operations Training",
+    title: "Technical Training Evidence",
+    description: "Upload and manage training evidence images organized by state, field office, and store.",
+    badge: "Maintain a visual record of team competence and field execution.",
+  },
   stores: {
     eyebrow: "Master Data",
     title: "Store Master",
@@ -109,7 +121,19 @@ function formatDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getLatestStoreRecord(records, storeId) {
+  const storeRecords = records
+    .filter((item) => item.storeId === storeId)
+    .sort((left, right) => String(right.month || "").localeCompare(String(left.month || "")));
+
+  return storeRecords[0] || null;
+}
+
 function getReportRecord(records, storeId, month) {
+  if (isAllMonthsValue(month)) {
+    return getLatestStoreRecord(records, storeId);
+  }
+
   const exactMatch = records.find((item) => item.storeId === storeId && item.month === month);
   if (exactMatch) {
     return exactMatch;
@@ -122,6 +146,81 @@ function getReportRecord(records, storeId, month) {
   return storeRecords[0] || null;
 }
 
+function isInMonthScope(recordMonth, month, allowedMonths = null) {
+  return isAllMonthsValue(month) ? (allowedMonths ? allowedMonths.has(recordMonth) : true) : recordMonth === month;
+}
+
+function getFaultRecord(records, storeId, month, allowedMonths = null) {
+  const storeRecords = records.filter((item) => item.storeId === storeId && isInMonthScope(item.month, month, allowedMonths));
+
+  if (!storeRecords.length) {
+    return null;
+  }
+
+  const latest = getLatestStoreRecord(records, storeId) || storeRecords[0];
+  const summary = storeRecords.reduce(
+    (acc, item) => {
+      acc.totalFaults += safeNumber(item.totalFaults);
+      acc.pendingFaults += safeNumber(item.pendingFaults);
+      acc.delayedJobs += safeNumber(item.delayedJobs);
+      acc.hasCritical = acc.hasCritical || item.status === "Critical";
+      return acc;
+    },
+    {
+      storeId,
+      storeName: latest.storeName,
+      location: latest.location,
+      region: latest.region,
+      state: latest.state,
+      month: ALL_MONTHS,
+      totalFaults: 0,
+      pendingFaults: 0,
+      delayedJobs: 0,
+      hasCritical: false,
+    },
+  );
+
+  return {
+    ...summary,
+    status: summary.hasCritical ? "Critical" : summary.delayedJobs > 0 ? "Attention" : "Controlled",
+  };
+}
+
+function getOlRecord(records, storeId, month, allowedMonths = null) {
+  const storeRecords = records.filter((item) => item.storeId === storeId && isInMonthScope(item.month, month, allowedMonths));
+
+  if (!storeRecords.length) {
+    return null;
+  }
+
+  const latest = getLatestStoreRecord(records, storeId) || storeRecords[0];
+  const summary = storeRecords.reduce(
+    (acc, item) => {
+      acc.openJobs += safeNumber(item.openJobs);
+      acc.overdueJobs += safeNumber(item.overdueJobs);
+
+      if (item.lastRaisedDate && (!acc.lastRaisedDate || item.lastRaisedDate > acc.lastRaisedDate)) {
+        acc.lastRaisedDate = item.lastRaisedDate;
+      }
+
+      return acc;
+    },
+    {
+      storeId,
+      storeName: latest.storeName,
+      location: latest.location,
+      region: latest.region,
+      state: latest.state,
+      month: ALL_MONTHS,
+      openJobs: 0,
+      overdueJobs: 0,
+      lastRaisedDate: latest.lastRaisedDate || "",
+    },
+  );
+
+  return summary;
+}
+
 function average(values) {
   const valid = values.filter((value) => Number.isFinite(value));
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
@@ -130,6 +229,10 @@ function average(values) {
 export function formatMonthLabel(monthValue) {
   if (!monthValue) {
     return "Select Month";
+  }
+
+  if (isAllMonthsValue(monthValue)) {
+    return "All Months";
   }
 
   const [year, month] = String(monthValue).split("-");
@@ -165,14 +268,73 @@ export function isStoreActiveInMonth(store, month) {
   return openedDate <= endOfMonth && (!closedDate || closedDate >= startOfMonth);
 }
 
-export function createUnifiedDataset(dataSource, month) {
-  const stores = getArray(dataSource, "stores");
-  const scopedStores = stores.filter((store) => isStoreActiveInMonth(store, month));
+function createReportOnlyStore(record, masterStore = null, status = "Report Only") {
+  if (masterStore) {
+    return masterStore;
+  }
 
-  return scopedStores.map((store) => {
+  const fallbackRegion = record.region || record.state || record.location || "Unknown";
+
+  return {
+    storeId: record.storeId,
+    storeName: record.storeName || record.storeId,
+    location: record.location || fallbackRegion,
+    region: fallbackRegion,
+    state: record.state || fallbackRegion,
+    openedDate: null,
+    closedDate: null,
+    server: "",
+    business: record.storeName || record.storeId,
+    status,
+    format: "",
+    isReportOnlyStore: true,
+  };
+}
+
+function includeReportOnlyStores(dataSource, scopedStores, month, allowedMonths = null) {
+  const storeIds = new Set(scopedStores.map((store) => store.storeId));
+  const masterStoresById = new Map(getArray(dataSource, "stores").map((store) => [store.storeId, store]));
+  const reportStores = [];
+
+  getArray(dataSource, "faults").forEach((record) => {
+    if (!record.storeId || storeIds.has(record.storeId)) {
+      return;
+    }
+
+    if (!isInMonthScope(record.month, month, allowedMonths)) {
+      return;
+    }
+
+    reportStores.push(createReportOnlyStore(record, masterStoresById.get(record.storeId), "Fault Only"));
+    storeIds.add(record.storeId);
+  });
+
+  getArray(dataSource, "ol").forEach((record) => {
+    if (!record.storeId || storeIds.has(record.storeId)) {
+      return;
+    }
+
+    if (!isInMonthScope(record.month, month, allowedMonths)) {
+      return;
+    }
+
+    reportStores.push(createReportOnlyStore(record, masterStoresById.get(record.storeId), "OL Only"));
+    storeIds.add(record.storeId);
+  });
+
+  return reportStores.length ? [...scopedStores, ...reportStores] : scopedStores;
+}
+
+export function createUnifiedDataset(dataSource, month, options = {}) {
+  const stores = getArray(dataSource, "stores");
+  const scopedStores = isAllMonthsValue(month) ? stores : stores.filter((store) => isStoreActiveInMonth(store, month));
+  const allowedMonths = options.reportMonths ? new Set(options.reportMonths) : null;
+  const reportStores = includeReportOnlyStores(dataSource, scopedStores, month, allowedMonths);
+
+  return reportStores.map((store) => {
     const attendance = getReportRecord(getArray(dataSource, "attendance"), store.storeId, month);
-    const faults = getReportRecord(getArray(dataSource, "faults"), store.storeId, month);
-    const ol = getReportRecord(getArray(dataSource, "ol"), store.storeId, month);
+    const faults = getFaultRecord(getArray(dataSource, "faults"), store.storeId, month, allowedMonths);
+    const ol = getOlRecord(getArray(dataSource, "ol"), store.storeId, month, allowedMonths);
     const thermography = getReportRecord(getArray(dataSource, "thermography"), store.storeId, month);
     const manpower = getReportRecord(getArray(dataSource, "manpower"), store.storeId, month);
     const cleaning = getReportRecord(getArray(dataSource, "cleaning"), store.storeId, month);
@@ -186,9 +348,6 @@ export function createUnifiedDataset(dataSource, month) {
       safeNumber(cmpm?.pmPending) +
       (thermography?.status === "Not Inspected" ? 1 : 0);
 
-    const delayed = safeNumber(faults?.delayedJobs) > 0 || safeNumber(ol?.overdueJobs) > 1;
-    const isClosed = Boolean(store.closedDate && new Date(store.closedDate) < new Date(`${month}-01`));
-
     return {
       ...store,
       attendance,
@@ -199,29 +358,24 @@ export function createUnifiedDataset(dataSource, month) {
       cleaning,
       cmpm,
       issueCount,
-      delayed,
-      isClosed,
-      lifecycleStatus: isClosed ? "Closed" : "Active",
-      riskStatus:
-        safeNumber(faults?.pendingFaults) >= 5 || thermography?.status === "Not Inspected"
-          ? "Critical"
-          : delayed
-            ? "Attention"
-            : "Healthy",
+      riskStatus: issueCount > 3 ? "Critical" : issueCount > 0 ? "Attention" : "Controlled",
     };
   });
 }
 
-export function getFilterOptions(data) {
+export function getFilterOptions(data, storeSource = data) {
   const unique = (values) => ["All", ...new Set(values.filter(Boolean))];
+  const storeOptionSource = Array.isArray(storeSource) && storeSource.length ? storeSource : data;
   const operationalRegions = [
     "All",
-    ...sortOperationalStates([...new Set(data.map((item) => normalizeOperationalState(item.region)).filter((state) => OPERATIONAL_STATE_ORDER.includes(state)))]),
+    ...sortOperationalStates([
+      ...new Set(storeOptionSource.map((item) => normalizeOperationalState(item.region)).filter((state) => OPERATIONAL_STATE_ORDER.includes(state))),
+    ]),
   ];
 
   return {
-    locations: unique(data.map((item) => item.location)),
-    storeIds: unique(data.map((item) => item.storeId)),
+    locations: unique(storeOptionSource.map((item) => item.location)),
+    storeIds: unique(storeOptionSource.map((item) => item.storeId)),
     regions: operationalRegions,
     statuses: ["All", "Healthy", "Attention", "Critical"],
     reportTypes: Object.values(viewReportTypeMap),
@@ -262,7 +416,9 @@ export function filterUnifiedData(data, filters) {
   });
 }
 
-export function calculateKpis(data, reportType) {
+export function calculateKpis(data, reportType, scope = {}) {
+  const isAllMonthsScope = isAllMonthsValue(scope.month);
+
   if (reportType === "Attendance") {
     const attendanceAverage = average(data.map((row) => safeNumber(row.attendance?.presentPct)));
     const absenceAverage = average(data.map((row) => safeNumber(row.attendance?.absentPct)));
@@ -283,10 +439,11 @@ export function calculateKpis(data, reportType) {
     const pendingFaults = data.reduce((sum, row) => sum + safeNumber(row.faults?.pendingFaults), 0);
     const delayedJobs = data.reduce((sum, row) => sum + safeNumber(row.faults?.delayedJobs), 0);
     const criticalStores = data.filter((row) => safeNumber(row.faults?.pendingFaults) >= 5).length;
+    const faultScopeNote = isAllMonthsScope ? "Raised across all months" : "Raised in selected month";
 
     return [
       { title: "Stores Reported", value: data.length, note: "Fault records in view", tone: "blue" },
-      { title: "Total Faults", value: totalFaults, note: "Raised in selected month", tone: "purple" },
+      { title: "Total Faults", value: totalFaults, note: faultScopeNote, tone: "purple" },
       { title: "Pending Faults", value: pendingFaults, note: "Open follow-up items", tone: "amber" },
       { title: "Delayed Jobs", value: delayedJobs, note: "Pending beyond SLA", tone: "red" },
       { title: "Critical Stores", value: criticalStores, note: "5+ pending faults", tone: "green" },
@@ -298,10 +455,11 @@ export function calculateKpis(data, reportType) {
     const overdueJobs = data.reduce((sum, row) => sum + safeNumber(row.ol?.overdueJobs), 0);
     const activeStores = data.filter((row) => safeNumber(row.ol?.openJobs) > 0).length;
     const severeStores = data.filter((row) => safeNumber(row.ol?.overdueJobs) > 1).length;
+    const olScopeNote = isAllMonthsScope ? "Across all months" : "Selected month";
 
     return [
       { title: "Stores Reported", value: data.length, note: "OL records in view", tone: "blue" },
-      { title: "Open Jobs", value: openJobs, note: "Current OL workload", tone: "purple" },
+      { title: "Open Jobs", value: openJobs, note: olScopeNote, tone: "purple" },
       { title: "Overdue Jobs", value: overdueJobs, note: "Need escalation", tone: "red" },
       { title: "Active Stores", value: activeStores, note: "Stores with OL activity", tone: "green" },
       { title: "Escalation Stores", value: severeStores, note: "More than 1 overdue OL item", tone: "amber" },
@@ -786,7 +944,8 @@ export function exportRowsToExcel(rows, reportType, month) {
   const data = getReportRows(rows, reportType);
   const table = buildTableMarkup(columns, data);
   const fileReport = reportType === "All Reports" ? "unified-dashboard" : reportType.toLowerCase().replace(/\s+/g, "-");
-  downloadExcelFile(table, `qpms-${fileReport}-${month}.xls`);
+  const fileMonth = isAllMonthsValue(month) ? "all-months" : month;
+  downloadExcelFile(table, `qpms-${fileReport}-${fileMonth}.xls`);
 }
 
 export function exportRowsToPdf() {
@@ -808,6 +967,8 @@ export function getDataSourceSummary(dataSource) {
     cleaning: getArray(dataSource, "cleaning").length,
     cmpm: getArray(dataSource, "cmpm").length,
     months: getAvailableMonths(dataSource).map((month) => formatMonthLabel(month)),
+    faultValidation: dataSource?.faultValidation || null,
+    faultDebug: dataSource?.faultDebug || null,
     generatedOn: formatDate(new Date()),
   };
 }

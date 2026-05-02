@@ -48,6 +48,21 @@ function getReconciliationRows(summary, bootstrapCounts = {}) {
   });
 }
 
+function formatReasonLabel(reason) {
+  return String(reason || "")
+    .split("_")
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function getFaultExclusionRows(faultValidation) {
+  return Object.entries(faultValidation?.excludedReasons || {}).map(([reason, count]) => ({
+    reason,
+    label: formatReasonLabel(reason),
+    count,
+  }));
+}
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value || 0);
 }
@@ -134,6 +149,8 @@ export function DataSourcePanel({
   const severeMismatchCount = reconciliationRows.filter((row) => row.status === "error").length;
   const hasBootstrap = Boolean(dataInfo.bootstrap?.counts);
   const summarySnapshot = dataInfo.summarySnapshot;
+  const faultValidation = summary.faultValidation;
+  const faultExclusionRows = getFaultExclusionRows(faultValidation);
 
   return (
     <section className="panel data-source-panel">
@@ -218,6 +235,87 @@ export function DataSourcePanel({
                         {row.status === "ok" ? "Matched" : row.status === "warn" ? "Near Match" : "Mismatch"}
                       </span>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {faultValidation ? (
+        <section className="panel">
+          <div className="panel__header">
+            <div>
+              <h3>Fault Row Validation</h3>
+              <p>Reconciles DB fault imports with the grouped dashboard fault summary, without touching the ticket-level tracker rows.</p>
+            </div>
+            <div className="filter-summary">
+              <span className="filter-chip">
+                <b>Imported DB Rows</b>
+                {faultValidation.importedDbRowCount}
+              </span>
+              <span className="filter-chip">
+                <b>Dashboard Included</b>
+                {faultValidation.includedRowCount}
+              </span>
+              <span className="filter-chip">
+                <b>Excluded Rows</b>
+                {faultValidation.excludedRowCount}
+              </span>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="data-table compact-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Count</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Imported fault rows from DB</td>
+                  <td>{faultValidation.importedDbRowCount}</td>
+                  <td>All rows returned by `/api/reports/faults`.</td>
+                </tr>
+                <tr>
+                  <td>Dashboard included fault rows</td>
+                  <td>{faultValidation.includedRowCount}</td>
+                  <td>Rows eligible for grouped fault summary by store and month.</td>
+                </tr>
+                <tr>
+                  <td>Grouped `totalFaults` sum</td>
+                  <td>{faultValidation.groupedTotalFaults}</td>
+                  <td>Should reconcile with the included row count before UI filters.</td>
+                </tr>
+                <tr>
+                  <td>Grouped store-month rows</td>
+                  <td>{faultValidation.groupedRowCount}</td>
+                  <td>Distinct dashboard summary buckets.</td>
+                </tr>
+                <tr>
+                  <td>Import fallback month</td>
+                  <td>{faultValidation.importMonth || "--"}</td>
+                  <td>Used only when workbook Month, Created At, and report-date derivation are unavailable.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="table-scroll">
+            <table className="data-table compact-table">
+              <thead>
+                <tr>
+                  <th>Excluded Reason</th>
+                  <th>Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {faultExclusionRows.map((row) => (
+                  <tr key={row.reason}>
+                    <td>{row.label}</td>
+                    <td>{row.count}</td>
                   </tr>
                 ))}
               </tbody>

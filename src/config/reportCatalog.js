@@ -1,4 +1,4 @@
-import { getDefaultMonth } from "../utils/dashboard";
+import { ALL_MONTHS, getDefaultMonth } from "../utils/dashboard";
 import { roundNumber } from "../utils/formatters";
 
 function cleanText(value, fallback = "") {
@@ -11,7 +11,7 @@ function cleanText(value, fallback = "") {
 }
 
 function scopedByMonth(rows = [], month) {
-  if (!month) {
+  if (!month || month === ALL_MONTHS) {
     return rows;
   }
 

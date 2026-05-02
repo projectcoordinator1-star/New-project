@@ -17,6 +17,7 @@ const sections = [
       { id: "manpower", label: "Manpower Readiness", enabled: true },
       { id: "cleaning", label: "Deep Cleaning", enabled: true },
       { id: "cmpm", label: "CMPM", enabled: true },
+      { id: "training", label: "Technical Training", enabled: true },
     ],
   },
   {
@@ -47,6 +48,7 @@ const itemAbbreviations = {
   manpower: "MP",
   cleaning: "DC",
   cmpm: "CM",
+  training: "TT",
   stores: "ST",
   users: "US",
   "data-sync": "DS",

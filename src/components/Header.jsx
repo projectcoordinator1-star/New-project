@@ -4,6 +4,8 @@ export function Header({ monthLabel, currentRole, onRoleChange, activeView, data
   const currentRoleLabel = WORKFLOW_ROLES.find((role) => role.id === currentRole)?.label || "HQ Admin";
   const modeLabel = dataInfo?.mode === "database" ? "Live DB" : "Demo Snapshot";
   const reportLabel = activeView === "dashboard" ? effectiveReportType : activeView.replace(/-/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+  const visibleLabel = activeView === "faults" || activeView === "ol" ? "Visible Jobs" : "Visible Stores";
+  const workflowModeLabel = activeView === "faults" ? "All fault tickets visible" : "Role-scoped workflow";
 
   return (
     <header className="topbar">
@@ -15,7 +17,7 @@ export function Header({ monthLabel, currentRole, onRoleChange, activeView, data
         </div>
         <div className="topbar__meta">
           <span className="topbar__meta-pill">Operational cockpit</span>
-          <span className="topbar__meta-pill">Role-scoped workflow</span>
+          <span className="topbar__meta-pill">{workflowModeLabel}</span>
           <span className="topbar__meta-pill topbar__meta-pill--status">
             <span className="pulse-dot" />
             {modeLabel}
@@ -50,7 +52,7 @@ export function Header({ monthLabel, currentRole, onRoleChange, activeView, data
           <b>Scope</b> {reportLabel}
         </span>
         <span className="topbar__strip-pill">
-          <b>Visible Stores</b> {visibleStoreCount}
+          <b>{visibleLabel}</b> {visibleStoreCount}
         </span>
         <span className="topbar__strip-pill">
           <b>Month</b> {monthLabel}

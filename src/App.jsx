@@ -49,6 +49,7 @@ function App() {
     handleRemarkChange,
     handleSyncRawDatabase,
     handleStageChange,
+    handleStoreUpdate,
     handleStoreStatusChange,
     handleUseDemoData,
     handleWorkflowFileChange,
@@ -113,6 +114,7 @@ function App() {
         {showKpis ? <KpiCards items={kpis} /> : null}
 
         <ViewRenderer
+          activeFilters={activeFilters}
           activeView={activeView}
           attendanceAopOverrides={attendanceAopOverrides}
           attendanceSummary={attendanceSummary}
@@ -130,6 +132,7 @@ function App() {
           onGroupChange={onGroupChange}
           onRemarkChange={handleRemarkChange}
           onStageChange={handleStageChange}
+          onStoreUpdate={handleStoreUpdate}
           onStoreStatusChange={handleStoreStatusChange}
           pivotRows={pivotRows}
           scopedReportRows={scopedReportRows}

@@ -1,4 +1,5 @@
 import { formatDisplayValue } from "../utils/formatters";
+import { isAllMonthsValue } from "../utils/dashboard";
 
 function InfoPanel({ title, subtitle, children }) {
   return (
@@ -86,33 +87,46 @@ function groupAndSort(items, labelFn, valueFn) {
 
 function renderFaultInsights(_rows, workflowRows) {
   const monthJobs = workflowRows;
-  const stageMix = groupAndSort(
+  const statusMix = groupAndSort(
     monthJobs,
-    (item) => item.workflowStage || "Unknown",
+    (item) => item.status || "Blank",
     () => 1,
   ).slice(0, 8);
-  const categoryMix = groupAndSort(monthJobs, (item) => item.category || "Unknown", () => 1).slice(0, 8);
+  const noteCoverage = [
+    {
+      label: "With Status_2 Note",
+      value: monthJobs.filter((item) => String(item.remark ?? item.statusNote ?? "").trim()).length,
+    },
+    {
+      label: "Blank Status_2 Note",
+      value: monthJobs.filter((item) => !String(item.remark ?? item.statusNote ?? "").trim()).length,
+    },
+    {
+      label: "Breached Tickets",
+      value: monthJobs.filter((item) => item.isOverdue).length,
+    },
+  ];
 
   return (
     <section className="report-insight-grid">
-      <InfoPanel title="Lifecycle Stage Mix" subtitle="Current jobs split by PO / execution / documentation stage">
-        {stageMix.length ? (
-          <MetricList items={stageMix} />
+      <InfoPanel title="Current Status Mix" subtitle="Raw fault status distribution for all visible fault tickets">
+        {statusMix.length ? (
+          <MetricList items={statusMix} />
         ) : (
           <div className="empty-state">
-            <strong>No lifecycle jobs for this month.</strong>
-            <p>Load the overall pending file to activate the lifecycle tracker.</p>
+            <strong>No fault tickets for this scope.</strong>
+            <p>Try changing the month, store, or search filters.</p>
           </div>
         )}
       </InfoPanel>
 
-      <InfoPanel title="Issue Category Mix" subtitle="Most common categories from in-scope lifecycle jobs">
-        {categoryMix.length ? (
-          <MetricList items={categoryMix} />
+      <InfoPanel title="Status_2 Note Coverage" subtitle="Tracks how many visible tickets already have a Status_2 remark">
+        {monthJobs.length ? (
+          <MetricList items={noteCoverage} />
         ) : (
           <div className="empty-state">
-            <strong>No job categories available.</strong>
-            <p>Upload the overall pending source to activate this panel.</p>
+            <strong>No fault status notes to summarize.</strong>
+            <p>The note coverage will update once fault tickets are visible in the tracker.</p>
           </div>
         )}
       </InfoPanel>
@@ -122,7 +136,7 @@ function renderFaultInsights(_rows, workflowRows) {
 
 function renderOlInsights(rows, dataSource, month, workflowRows) {
   const sourceRows = dataSource.olTickets?.length ? dataSource.olTickets : dataSource.pendingTickets || [];
-  const monthJobs = sourceRows.filter((item) => item.month === month);
+  const monthJobs = sourceRows.filter((item) => isAllMonthsValue(month) || item.month === month);
   const visibleJobs = monthJobs.filter((job) => workflowRows.some((row) => row.ticketNumber === job.ticketNumber));
   const commercialStages = visibleJobs.filter((item) =>
     [
@@ -253,49 +267,7 @@ function renderManpowerInsights(rows) {
 }
 
 function renderCleaningInsights(rows) {
-  const filtered = rows.filter((row) => row.cleaning);
-  if (!filtered.length) {
-    return (
-      <section className="report-insight-grid">
-        <EmptyPanel title="Pending Cleaning Load" subtitle="Cleaning workbook not loaded yet" />
-        <EmptyPanel title="Completion by Region" subtitle="This page will become active once cleaning data is available" />
-      </section>
-    );
-  }
-
-  const pendingStores = filtered
-    .filter((row) => safeNumber(row.cleaning?.pending) > 0)
-    .sort((left, right) => safeNumber(right.cleaning?.pending) - safeNumber(left.cleaning?.pending))
-    .slice(0, 8)
-    .map((row) => ({
-      store: row.storeName,
-      state: row.region,
-      pending: row.cleaning?.pending ?? 0,
-    }));
-
-  const completionByRegion = groupAndSort(
-    filtered,
-    (row) => row.region || "Unknown",
-    (row) => safeNumber(row.cleaning?.completed),
-  );
-
-  return (
-    <section className="report-insight-grid">
-      <InfoPanel title="Pending Cleaning Stores" subtitle="Follow-up priority list">
-        <CompactTable
-          columns={[
-            { key: "store", label: "Store" },
-            { key: "state", label: "State" },
-            { key: "pending", label: "Pending" },
-          ]}
-          rows={pendingStores}
-        />
-      </InfoPanel>
-      <InfoPanel title="Completion by Region" subtitle="Completed deep-cleaning jobs">
-        <MetricList items={completionByRegion} />
-      </InfoPanel>
-    </section>
-  );
+  return null;
 }
 
 function renderStoreInsights(rows) {

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { exportRowsToExcel, exportRowsToPdf } from "../utils/dashboard";
 import { AttendanceSummaryPanel } from "./AttendanceSummaryPanel";
 import { DataSyncExplainer } from "./DataSyncExplainer";
+import { DeepCleaningImagePanel } from "./DeepCleaningImagePanel";
 import { DetailedTable } from "./DetailedTable";
 import { PivotTable } from "./PivotTable";
 import { ReportChart } from "./ReportChart";
@@ -11,8 +12,10 @@ import { StoreMasterWorkspace } from "./StoreMasterWorkspace";
 import { TrendPanel } from "./TrendPanel";
 import { WorkflowTrackerPanel } from "./WorkflowTrackerPanel";
 import { PoRequestLab } from "./po/PoRequestLab";
+import { TechnicalTrainingWorkspace } from "./TechnicalTrainingWorkspace";
 
 export function ViewRenderer({
+  activeFilters,
   activeView,
   attendanceAopOverrides,
   attendanceSummary,
@@ -30,6 +33,7 @@ export function ViewRenderer({
   onGroupChange,
   onRemarkChange,
   onStageChange,
+  onStoreUpdate,
   onStoreStatusChange,
   pivotRows,
   scopedReportRows,
@@ -79,8 +83,19 @@ export function ViewRenderer({
     return <PoRequestLab />;
   }
 
+  if (activeView === "training") {
+    return <TechnicalTrainingWorkspace stores={dataSource.stores} />;
+  }
+
   if (activeView === "stores") {
-    return <StoreMasterWorkspace stores={dataSource.stores} onAddStore={onAddStore} onStatusChange={onStoreStatusChange} />;
+    return (
+      <StoreMasterWorkspace
+        stores={dataSource.stores}
+        onAddStore={onAddStore}
+        onStatusChange={onStoreStatusChange}
+        onUpdateStore={onStoreUpdate}
+      />
+    );
   }
 
   if (activeView === "attendance") {
@@ -137,6 +152,35 @@ export function ViewRenderer({
           rows={scopedReportRows}
           reportType={effectiveReportType}
           onExportExcel={() => exportRowsToExcel(scopedReportRows, effectiveReportType, month)}
+          onExportPdf={exportRowsToPdf}
+        />
+      </>
+    );
+  }
+
+  if (activeView === "cleaning") {
+    return (
+      <>
+        <ReportInsights activeView={activeView} rows={filteredRows} dataSource={dataSource} month={month} />
+        <DeepCleaningImagePanel rows={filteredRows} masterStores={dataSource.stores} filters={activeFilters} />
+        <DetailedTable
+          rows={filteredRows}
+          reportType={effectiveReportType}
+          onExportExcel={() => exportRowsToExcel(filteredRows, effectiveReportType, month)}
+          onExportPdf={exportRowsToPdf}
+        />
+      </>
+    );
+  }
+
+  if (["faults", "ol", "thermography", "manpower", "cleaning", "cmpm"].includes(activeView)) {
+    return (
+      <>
+        <ReportInsights activeView={activeView} rows={filteredRows} dataSource={dataSource} month={month} />
+        <DetailedTable
+          rows={filteredRows}
+          reportType={effectiveReportType}
+          onExportExcel={() => exportRowsToExcel(filteredRows, effectiveReportType, month)}
           onExportPdf={exportRowsToPdf}
         />
       </>

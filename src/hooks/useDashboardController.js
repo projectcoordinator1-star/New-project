@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ALL_MONTHS,
   buildAttendanceSummary,
   buildPivotRows,
   buildTrendSnapshot,
@@ -11,6 +12,7 @@ import {
   getDataSourceSummary,
   getFilterOptions,
   getAttendanceAvailableDates,
+  isAllMonthsValue,
   viewMeta,
   viewReportTypeMap,
 } from "../utils/dashboard";
@@ -22,6 +24,7 @@ import {
   createUploadSession,
   fetchReport,
   fetchDashboardBootstrap,
+  updateMasterStoreDetails,
   updateMasterStoreStatus,
 } from "../services/dashboardGateway";
 import { syncFilesToRawDatabase } from "../services/rawDatabaseSync";
@@ -37,6 +40,23 @@ const FILTERABLE_VIEWS = [
   "cmpm",
   "stores",
 ];
+const FAULT_DELAY_THRESHOLD_DAYS = 2;
+const INITIAL_DB_FETCH_LIMIT = 5000;
+const REPORT_MONTH_LOOKBACK = 12;
+const MONTH_LOOKUP = {
+  JAN: 1,
+  FEB: 2,
+  MAR: 3,
+  APR: 4,
+  MAY: 5,
+  JUN: 6,
+  JUL: 7,
+  AUG: 8,
+  SEP: 9,
+  OCT: 10,
+  NOV: 11,
+  DEC: 12,
+};
 
 function readStoredValue(key, fallback) {
   if (typeof window === "undefined") return fallback;
@@ -73,6 +93,17 @@ function getPreferredMonth(months) {
   return months.includes(currentMonth) ? currentMonth : months[0] || currentMonth;
 }
 
+function getCurrentAndPreviousMonths(date = new Date(), lookback = REPORT_MONTH_LOOKBACK) {
+  return Array.from({ length: lookback + 1 }, (_, offset) => {
+    const monthDate = new Date(date.getFullYear(), date.getMonth() - offset, 1);
+    return getCurrentMonthKey(monthDate);
+  });
+}
+
+function getReportMonthsForView() {
+  return getCurrentAndPreviousMonths();
+}
+
 function getAvailableMonthsForView(dataSource, view) {
   if (view === "attendance") {
     const attendanceMonths = uniqueMonths(
@@ -81,14 +112,23 @@ function getAvailableMonthsForView(dataSource, view) {
     return attendanceMonths.length ? attendanceMonths : [getPreferredMonth(getAvailableMonths(dataSource))];
   }
 
+  if (view === "dashboard") {
+    return [ALL_MONTHS, ...getAvailableMonths(dataSource)];
+  }
+
+  if (view === "faults" || view === "ol") {
+    return [ALL_MONTHS, ...getReportMonthsForView(dataSource, view)];
+  }
+
   return getAvailableMonths(dataSource);
 }
 
 function createInitialFilters(dataSource, view = "dashboard") {
   const months = getAvailableMonthsForView(dataSource, view);
+  const preferredMonths = view === "dashboard" ? months.filter((month) => !isAllMonthsValue(month)) : months;
 
   return {
-    month: getPreferredMonth(months),
+    month: view === "faults" || view === "ol" ? ALL_MONTHS : getPreferredMonth(preferredMonths.length ? preferredMonths : months),
     region: "All",
     location: "All",
     storeId: "All",
@@ -160,6 +200,279 @@ function getMonthFromDate(value, fallback = "Unknown") {
   return fallback;
 }
 
+function normalizeMonthKey(value, fallback = "") {
+  const text = cleanText(value);
+  if (!text) return fallback;
+
+  if (/^\d{4}-\d{2}$/.test(text)) {
+    return text;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+    return text.slice(0, 7);
+  }
+
+  const monthMatch = text.match(/^([A-Za-z]{3,9})[-\s']?(\d{2,4})$/);
+  if (monthMatch) {
+    const monthToken = monthMatch[1].slice(0, 3).toUpperCase();
+    const monthNumber = MONTH_LOOKUP[monthToken];
+    if (!monthNumber) {
+      return fallback;
+    }
+
+    const yearText = monthMatch[2];
+    const year = yearText.length === 2 ? `20${yearText}` : yearText;
+    return `${year}-${String(monthNumber).padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return getMonthFromDate(text, fallback);
+}
+
+function toIsoDateString(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function normalizeDateValue(value, fallback = "") {
+  const text = cleanText(value);
+  if (!text) return fallback;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+    return text.slice(0, 10);
+  }
+
+  const dmyMatch = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+  }
+
+  const monthTextMatch = text.match(/^([A-Za-z]{3,9})[-\s']?(\d{2,4})$/);
+  if (monthTextMatch) {
+    const monthToken = monthTextMatch[1].slice(0, 3).toUpperCase();
+    const monthNumber = MONTH_LOOKUP[monthToken];
+    if (monthNumber) {
+      const yearText = monthTextMatch[2];
+      const year = yearText.length === 2 ? `20${yearText}` : yearText;
+      return `${year}-${String(monthNumber).padStart(2, "0")}-01`;
+    }
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? fallback : toIsoDateString(parsed);
+}
+
+function shiftDateByDays(dateValue, dayCount) {
+  const normalized = normalizeDateValue(dateValue);
+  if (!normalized) return "";
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  parsed.setDate(parsed.getDate() + dayCount);
+  return toIsoDateString(parsed);
+}
+
+function parseNumericField(value) {
+  const text = cleanText(value);
+  if (!text) {
+    return {
+      isBlank: true,
+      isValid: false,
+      value: 0,
+    };
+  }
+
+  const normalized = Number(text.replace(/,/g, ""));
+  if (Number.isFinite(normalized)) {
+    return {
+      isBlank: false,
+      isValid: true,
+      value: normalized,
+    };
+  }
+
+  const numericMatch = text.match(/-?\d+(?:\.\d+)?/);
+  if (numericMatch) {
+    return {
+      isBlank: false,
+      isValid: true,
+      value: Number(numericMatch[0]),
+    };
+  }
+
+  return {
+    isBlank: false,
+    isValid: false,
+    value: 0,
+  };
+}
+
+function getLatestFaultImportMeta(bootstrap = null) {
+  const latestFaultImport = (bootstrap?.latestImports || []).find(
+    (item) => item.sheet_name === "Fault Report" || item.raw_table_name === "IFMS Dashboard.xlsx - Fault Report",
+  );
+  const importedAt = normalizeDateValue(latestFaultImport?.imported_at || bootstrap?.generatedAt, "");
+
+  return {
+    importedAt,
+    importMonth: normalizeMonthKey(importedAt, ""),
+  };
+}
+
+function fetchStartupReport(reportKey) {
+  return fetchReport(reportKey, { limit: INITIAL_DB_FETCH_LIMIT }, { includeCount: false });
+}
+
+function buildFaultTicketRow(row, importMeta = {}) {
+  const monthFromColumn = normalizeMonthKey(row.month_key || row.month, "");
+  const createdAt = normalizeDateValue(row.created_at, "");
+  const monthFromCreatedAt = normalizeMonthKey(createdAt, "");
+  const reportDate = normalizeDateValue(row.report_date || row.as_of_date || importMeta.importedAt, "");
+  const ageingInfo = parseNumericField(row.ageing_days ?? row.ageing_text);
+  const ageingDays = ageingInfo.isValid ? ageingInfo.value : 0;
+  const inferredCreatedAt = reportDate && ageingInfo.isValid ? shiftDateByDays(reportDate, -Math.round(ageingDays)) : "";
+  const monthFromReportDate = normalizeMonthKey(inferredCreatedAt, "");
+  const importMonth = normalizeMonthKey(row.imported_at || importMeta.importMonth || importMeta.importedAt, "");
+  const month = monthFromColumn || monthFromCreatedAt || monthFromReportDate || importMonth;
+  const statusCode = cleanCode(row.status);
+  const breached = cleanCode(row.breached_flag) === "BREACHED";
+  const critical = breached || cleanCode(row.criticality) === "C";
+  const pending = statusCode !== "COMPLETED" && statusCode !== "CLOSED";
+  const delayed = breached || ageingDays > FAULT_DELAY_THRESHOLD_DAYS;
+
+  let dashboardExclusionReason = "";
+  if (!cleanText(row.store_id)) {
+    dashboardExclusionReason = "missing_store_id";
+  } else if (!month) {
+    if (cleanText(row.created_at) && !createdAt) {
+      dashboardExclusionReason = "invalid_created_at";
+    } else if (!ageingInfo.isBlank && !ageingInfo.isValid) {
+      dashboardExclusionReason = "invalid_ageing";
+    } else {
+      dashboardExclusionReason = "missing_month_key";
+    }
+  }
+
+  return {
+    ...row,
+    storeId: row.store_id || "",
+    storeName: row.store_name || row.store_id || "Unknown Store",
+    location: row.city || row.state_group || "Unknown",
+    region: row.state_group || "Unknown",
+    state: row.state_group || "Unknown",
+    month,
+    monthSource: monthFromColumn
+      ? "month"
+      : monthFromCreatedAt
+        ? "created_at"
+        : monthFromReportDate
+          ? "report_date_minus_ageing"
+          : importMonth
+            ? "import_month"
+            : "",
+    ticketNumber: row.ticket_number || "",
+    createdAt: createdAt || inferredCreatedAt || "",
+    reportDate,
+    asOfDate: reportDate,
+    importMonth,
+    status: row.status || "",
+    statusNote: cleanText(row.status_note || row.status__2),
+    criticality: row.criticality || "",
+    ageingDays,
+    breachedFlag: row.breached_flag || "",
+    isOverdue: delayed,
+    issueTitle: row.issue_title || "",
+    category: row.category || "",
+    subCategory: row.sub_category || "",
+    issueType: row.issue_type || "",
+    workflowStage: inferFaultWorkflowStage(row),
+    pendingFaults: pending ? 1 : 0,
+    delayedJobs: delayed ? 1 : 0,
+    totalFaults: 1,
+    remark: "",
+    isDashboardIncluded: !dashboardExclusionReason,
+    dashboardExclusionReason,
+  };
+}
+
+function aggregateFaultTickets(ticketRows = []) {
+  const grouped = new Map();
+
+  ticketRows
+    .filter((row) => row.isDashboardIncluded)
+    .forEach((row) => {
+      const key = `${row.storeId}|${row.month}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          storeId: row.storeId,
+          storeName: row.storeName,
+          location: row.location,
+          region: row.region,
+          state: row.state,
+          month: row.month,
+          totalFaults: 0,
+          pendingFaults: 0,
+          delayedJobs: 0,
+          hasCritical: false,
+        });
+      }
+
+      const current = grouped.get(key);
+      current.totalFaults += 1;
+      current.pendingFaults += row.pendingFaults;
+      current.delayedJobs += row.delayedJobs;
+      current.hasCritical = current.hasCritical || cleanCode(row.breachedFlag) === "BREACHED" || cleanCode(row.criticality) === "C";
+    });
+
+  return Array.from(grouped.values()).map((item) => ({
+    storeId: item.storeId,
+    storeName: item.storeName,
+    location: item.location,
+    region: item.region,
+    state: item.state,
+    month: item.month,
+    totalFaults: item.totalFaults,
+    pendingFaults: item.pendingFaults,
+    delayedJobs: item.delayedJobs,
+    status: item.hasCritical ? "Critical" : item.delayedJobs > 0 ? "Attention" : "Controlled",
+  }));
+}
+
+function buildFaultValidation(ticketRows = [], groupedRows = [], importMeta = {}) {
+  const excludedReasons = {
+    missing_store_id: 0,
+    missing_month_key: 0,
+    invalid_created_at: 0,
+    invalid_ageing: 0,
+    status_excluded: 0,
+  };
+
+  let includedRowCount = 0;
+  ticketRows.forEach((row) => {
+    if (row.dashboardExclusionReason) {
+      excludedReasons[row.dashboardExclusionReason] += 1;
+      return;
+    }
+
+    includedRowCount += 1;
+  });
+
+  return {
+    importedDbRowCount: ticketRows.length,
+    includedRowCount,
+    excludedRowCount: ticketRows.length - includedRowCount,
+    groupedRowCount: groupedRows.length,
+    groupedTotalFaults: groupedRows.reduce((sum, row) => sum + row.totalFaults, 0),
+    excludedReasons,
+    importMonth: importMeta.importMonth || "",
+    importDate: importMeta.importedAt || "",
+  };
+}
+
 function getDateDiffInDays(dateValue) {
   if (!dateValue) return 0;
 
@@ -175,7 +488,12 @@ function getDateDiffInDays(dateValue) {
 function getLatestMonthFromRows(...collections) {
   const months = collections
     .flat()
-    .map((item) => item?.month_key || item?.month || getMonthFromDate(item?.po_date || item?.created_at, ""))
+    .map(
+      (item) =>
+        item?.month_key ||
+        item?.month ||
+        getMonthFromDate(item?.po_date || item?.created_at || item?.report_date || item?.as_of_date, ""),
+    )
     .filter(Boolean)
     .sort((left, right) => right.localeCompare(left));
 
@@ -255,60 +573,26 @@ function mapStoreMasterRow(row = {}) {
   };
 }
 
-function mapApiRowsToDataSource(apiData = {}) {
-  const latestMonth = getLatestMonthFromRows(
-    apiData.attendance || [],
-    apiData.faults || [],
-    apiData.ol || [],
-    apiData.thermography || [],
-    apiData["deep-cleaning"] || [],
-  );
-  const groupedAttendance = {};
-
-  (apiData.attendance || []).forEach((row) => {
-    const storeId = row.store_id || "Unknown";
-    const month = row.month_key || row.attendance_date?.slice(0, 7) || "Unknown";
-    const key = `${storeId}_${month}`;
-
-    if (!groupedAttendance[key]) {
-      groupedAttendance[key] = {
-        storeId,
-        storeName: row.store_name || "Unknown Store",
-        month,
-        total: 0,
-        present: 0,
-        mandays: 0,
-        employees: new Set(),
-      };
-    }
-
-    groupedAttendance[key].total += 1;
-    groupedAttendance[key].mandays += toNumber(row.attendance_value);
-
-    if (toNumber(row.attendance_value) > 0) {
-      groupedAttendance[key].present += 1;
-    }
-
-    if (row.ep_no) {
-      groupedAttendance[key].employees.add(row.ep_no);
-    }
-  });
-
-  const attendance = Object.values(groupedAttendance).map((item) => {
-    const absent = item.total - item.present;
+function mapAttendanceSummaryRows(rows = []) {
+  return rows.map((row) => {
+    const total = toNumber(row.total_rows || row.employee_rows || row.total);
+    const present = toNumber(row.present_rows || row.present);
+    const absent = Math.max(total - present, 0);
 
     return {
-      storeId: item.storeId,
-      storeName: item.storeName,
-      month: item.month,
-      presentPct: item.total ? Math.round((item.present / item.total) * 100) : 0,
-      absentPct: item.total ? Math.round((absent / item.total) * 100) : 0,
-      manpowerOnRoll: item.employees.size,
-      mandays: Number(item.mandays.toFixed(2)),
+      storeId: row.store_id || row.storeId || "Unknown",
+      storeName: row.store_name || row.storeName || "Unknown Store",
+      month: row.month_key || row.month || "Unknown",
+      presentPct: total ? Math.round((present / total) * 100) : 0,
+      absentPct: total ? Math.round((absent / total) * 100) : 0,
+      manpowerOnRoll: toNumber(row.employee_count || row.manpower_on_roll),
+      mandays: Number(toNumber(row.mandays).toFixed(2)),
     };
   });
+}
 
-  const attendanceDaily = (apiData.attendance || []).map((row) => ({
+function mapAttendanceDailyRows(rows = []) {
+  return rows.map((row) => ({
     storeId: row.store_id,
     storeName: row.store_name,
     location: row.state_group || "Unknown",
@@ -328,83 +612,50 @@ function mapApiRowsToDataSource(apiData = {}) {
     outTime: row.out_time,
     manHours: row.man_hours,
   }));
+}
 
-  const stores = (apiData.stores || []).map(mapStoreMasterRow);
+function buildOlTicketRow(row = {}) {
+  const workflowStage = inferOlWorkflowStage(row);
+  const stageIndex = WORKFLOW_STAGES.indexOf(workflowStage);
+  const isActiveStage = stageIndex >= 0 && stageIndex < 8;
+  const ageingDays = getDateDiffInDays(row.po_date);
 
-  const faults = (apiData.faults || []).map((row) => ({
+  return {
     storeId: row.store_id,
-    storeName: row.store_name,
-    location: row.city || row.state_group || "Unknown",
+    storeName: row.site || row.store_name || row.store_id,
+    location: row.state_group || "Unknown",
     region: row.state_group || "Unknown",
     state: row.state_group || "Unknown",
-    month: row.month_key || getMonthFromDate(row.created_at),
-    totalFaults: 1,
-    pendingFaults: cleanCode(row.status) === "COMPLETED" || cleanCode(row.status) === "CLOSED" ? 0 : 1,
-    delayedJobs: cleanCode(row.breached_flag) === "BREACHED" || toNumber(row.ageing_days) > 2 ? 1 : 0,
-    status:
-      cleanCode(row.breached_flag) === "BREACHED"
-        ? "Critical"
-        : cleanCode(row.status) === "IN_PROGRESS"
-          ? "Attention"
-          : "Controlled",
-    ticketNumber: row.ticket_number,
-    createdAt: row.created_at,
-    issueTitle: row.issue_title,
-    category: row.category,
-    subCategory: row.sub_category,
-    issueType: row.issue_type,
-    workflowStage: inferFaultWorkflowStage(row),
-    ageingDays: toNumber(row.ageing_days),
-    breachedFlag: row.breached_flag,
-    isOverdue: cleanCode(row.breached_flag) === "BREACHED" || toNumber(row.ageing_days) > 2,
-    criticality: row.criticality,
-    remark: "",
-  }));
+    month: row.month_key || getMonthFromDate(row.po_date),
+    ticketNumber: row.ol_item_key || `${row.po_number}-${row.item_no}`.replace(/-$/, ""),
+    poNumber: row.po_number,
+    createdAt: row.po_date,
+    status: row.release_indicator || row.delivery_complete_indicator || "",
+    criticality: row.doc_type || "NA",
+    ageingDays,
+    breachedFlag: isActiveStage && ageingDays > 30 ? "Breached" : "Within SLA",
+    isOverdue: isActiveStage && ageingDays > 30,
+    issueTitle: row.article_description || row.remark || row.po_number,
+    category: row.doc_type || "OL",
+    subCategory: row.wbs_element,
+    workflowStage,
+    isActiveStage,
+    olStatusNote: [row.remark, row.additional_remark, row.setoff_status].filter(Boolean).join(" | "),
+    openJobs: isActiveStage ? 1 : 0,
+    overdueJobs: isActiveStage && ageingDays > 30 ? 1 : 0,
+    lastRaisedDate: row.po_date,
+    server: row.server,
+    grossAmount: toNumber(row.gross_amount),
+    grnValue: toNumber(row.grn_value),
+    invoiceValue: toNumber(row.invoice_value),
+    remark: row.remark,
+  };
+}
 
-  const faultTickets = faults.map((row) => ({
-    ...row,
-  }));
-
-  const olTickets = (apiData.ol || []).map((row) => {
-    const workflowStage = inferOlWorkflowStage(row);
-    const stageIndex = WORKFLOW_STAGES.indexOf(workflowStage);
-    const isActiveStage = stageIndex >= 0 && stageIndex < 8;
-    const ageingDays = getDateDiffInDays(row.po_date);
-
-    return {
-      storeId: row.store_id,
-      storeName: row.site || row.store_id,
-      location: row.state_group || "Unknown",
-      region: row.state_group || "Unknown",
-      state: row.state_group || "Unknown",
-      month: row.month_key || getMonthFromDate(row.po_date),
-      ticketNumber: row.ol_item_key || `${row.po_number}-${row.item_no}`.replace(/-$/, ""),
-      poNumber: row.po_number,
-      createdAt: row.po_date,
-      status: row.release_indicator || row.delivery_complete_indicator || "",
-      criticality: row.doc_type || "NA",
-      ageingDays,
-      breachedFlag: isActiveStage && ageingDays > 30 ? "Breached" : "Within SLA",
-      isOverdue: isActiveStage && ageingDays > 30,
-      issueTitle: row.article_description || row.remark || row.po_number,
-      category: row.doc_type || "OL",
-      subCategory: row.wbs_element,
-      workflowStage,
-      isActiveStage,
-      olStatusNote: [row.remark, row.additional_remark, row.setoff_status].filter(Boolean).join(" | "),
-      openJobs: isActiveStage ? 1 : 0,
-      overdueJobs: isActiveStage && ageingDays > 30 ? 1 : 0,
-      lastRaisedDate: row.po_date,
-      server: row.server,
-      grossAmount: toNumber(row.gross_amount),
-      grnValue: toNumber(row.grn_value),
-      invoiceValue: toNumber(row.invoice_value),
-      remark: row.remark,
-    };
-  });
-
+function aggregateOlTickets(ticketRows = []) {
   const olByStoreMonth = new Map();
-  olTickets.forEach((row) => {
+
+  ticketRows.forEach((row) => {
     const key = `${row.storeId}|${row.month}`;
     if (!olByStoreMonth.has(key)) {
       olByStoreMonth.set(key, {
@@ -429,7 +680,88 @@ function mapApiRowsToDataSource(apiData = {}) {
     }
   });
 
-  const ol = Array.from(olByStoreMonth.values());
+  return Array.from(olByStoreMonth.values());
+}
+
+function mapOlSummaryRows(rows = []) {
+  return rows.map((row) => ({
+    storeId: row.store_id,
+    storeName: row.store_name || row.site || row.store_id,
+    location: row.state_group || "Unknown",
+    region: row.state_group || "Unknown",
+    state: row.state_group || "Unknown",
+    month: row.month_key || getMonthFromDate(row.last_raised_date),
+    openJobs: toNumber(row.open_jobs),
+    overdueJobs: toNumber(row.overdue_jobs),
+    lastRaisedDate: row.last_raised_date || row.lastRaisedDate || "",
+  }));
+}
+
+function mapApiRowsToDataSource(apiData = {}, options = {}) {
+  const faultImportMeta = getLatestFaultImportMeta(options.bootstrap);
+  const attendanceSummaryRows = apiData["attendance-store-month"] || [];
+  const olSummaryRows = apiData["ol-store-month"] || [];
+  const rawAttendanceRows = apiData.attendance || [];
+  const rawOlRows = apiData.ol || [];
+  const latestMonth = getLatestMonthFromRows(
+    rawAttendanceRows,
+    attendanceSummaryRows,
+    apiData.faults || [],
+    rawOlRows.length ? rawOlRows : olSummaryRows,
+    apiData.thermography || [],
+    apiData["deep-cleaning"] || [],
+  );
+  const attendance =
+    attendanceSummaryRows.length > 0
+      ? mapAttendanceSummaryRows(attendanceSummaryRows)
+      : mapAttendanceSummaryRows(
+          Object.values(
+            rawAttendanceRows.reduce((grouped, row) => {
+              const storeId = row.store_id || "Unknown";
+              const month = row.month_key || row.attendance_date?.slice(0, 7) || "Unknown";
+              const key = `${storeId}_${month}`;
+
+              if (!grouped[key]) {
+                grouped[key] = {
+                  store_id: storeId,
+                  store_name: row.store_name || "Unknown Store",
+                  month_key: month,
+                  total_rows: 0,
+                  present_rows: 0,
+                  mandays: 0,
+                  employee_count: new Set(),
+                };
+              }
+
+              grouped[key].total_rows += 1;
+              grouped[key].mandays += toNumber(row.attendance_value);
+
+              if (toNumber(row.attendance_value) > 0) {
+                grouped[key].present_rows += 1;
+              }
+
+              if (row.ep_no) {
+                grouped[key].employee_count.add(row.ep_no);
+              }
+
+              return grouped;
+            }, {}),
+          ).map((item) => ({
+            ...item,
+            employee_count: item.employee_count.size,
+          })),
+        );
+
+  const attendanceDaily = mapAttendanceDailyRows(rawAttendanceRows);
+
+  const stores = (apiData.stores || []).map(mapStoreMasterRow);
+
+  const faultTickets = (apiData.faults || []).map((row) => buildFaultTicketRow(row, faultImportMeta));
+  const faults = aggregateFaultTickets(faultTickets);
+  const faultValidation = buildFaultValidation(faultTickets, faults, faultImportMeta);
+
+  const olTickets = rawOlRows.map((row) => buildOlTicketRow(row));
+  const ol = olSummaryRows.length > 0 ? mapOlSummaryRows(olSummaryRows) : aggregateOlTickets(olTickets);
 
   const thermography = (apiData.thermography || []).map((row) => ({
     storeId: row.store_id,
@@ -489,6 +821,11 @@ function mapApiRowsToDataSource(apiData = {}) {
     overallPendingTickets: [],
     faultTickets,
     olTickets,
+    faultValidation,
+    faultDebug: {
+      rawFaultTicketCount: faultTickets.length,
+      groupedTotalFaults: faultValidation.groupedTotalFaults,
+    },
     cmpm: (apiData.cmpm || []).map((row) => ({
       storeId: row.store_id,
       storeName: row.store_name,
@@ -535,6 +872,8 @@ export function useDashboardController() {
   const [faultRemarks, setFaultRemarks] = useState(() => readStoredJson("qpms-fault-remarks", {}));
   const [attendanceAopOverrides, setAttendanceAopOverrides] = useState(() => readStoredJson("qpms-attendance-aop-overrides", {}));
   const lastAutoAttendanceDateRef = useRef("");
+  const attendanceDetailStatusRef = useRef("idle");
+  const olDetailStatusRef = useRef("idle");
 
   const [workflowFiles, setWorkflowFiles] = useState({
     allocation: null,
@@ -550,35 +889,34 @@ export function useDashboardController() {
       setIsLoadingDatabase(true);
 
       try {
+        const bootstrapPromise = fetchDashboardBootstrap().catch(() => null);
         const [
-          bootstrap,
           storesRows,
-          attendanceRows,
+          attendanceSummaryRows,
           faultsRows,
-          olRows,
+          olSummaryRows,
           cmpmRows,
           thermographyRows,
           cleaningRows,
           manpowerRows,
         ] = await Promise.all([
-          fetchDashboardBootstrap().catch(() => null),
-          fetchReport("stores", {}, { all: true }).catch(() => []),
-          fetchReport("attendance", {}, { all: true }).catch(() => []),
-          fetchReport("faults", {}, { all: true }).catch(() => []),
-          fetchReport("ol", {}, { all: true }).catch(() => []),
-          fetchReport("cmpm", {}, { all: true }).catch(() => []),
-          fetchReport("thermography", {}, { all: true }).catch(() => []),
-          fetchReport("deep-cleaning", {}, { all: true }).catch(() => []),
-          fetchReport("manpower", {}, { all: true }).catch(() => []),
+          fetchStartupReport("stores").catch(() => []),
+          fetchStartupReport("attendance-store-month").catch(() => []),
+          fetchStartupReport("faults").catch(() => []),
+          fetchStartupReport("ol-store-month").catch(() => []),
+          fetchStartupReport("cmpm").catch(() => []),
+          fetchStartupReport("thermography").catch(() => []),
+          fetchStartupReport("deep-cleaning").catch(() => []),
+          fetchStartupReport("manpower").catch(() => []),
         ]);
 
         if (cancelled) return;
 
         const apiDataSource = mapApiRowsToDataSource({
           stores: storesRows,
-          attendance: attendanceRows,
+          "attendance-store-month": attendanceSummaryRows,
           faults: faultsRows,
-          ol: olRows,
+          "ol-store-month": olSummaryRows,
           cmpm: cmpmRows,
           thermography: thermographyRows,
           "deep-cleaning": cleaningRows,
@@ -592,16 +930,35 @@ export function useDashboardController() {
           loadedSheets: [],
           missingSheets: [],
           error: "",
-          bootstrap,
+          bootstrap: null,
           connection: {
             database: "qpms_dashboard",
             host: "localhost",
             port: 8787,
             status: "connected",
           },
+          stats: {
+            stores: storesRows.length,
+            attendanceImported: 0,
+            faultTickets: faultsRows.length,
+            olTickets: 0,
+            thermography: thermographyRows.length,
+            manpower: manpowerRows.length,
+            cleaning: cleaningRows.length,
+            cmpm: cmpmRows.length,
+          },
         });
 
         setViewFilters(createInitialViewFilters(apiDataSource));
+
+        bootstrapPromise.then((bootstrap) => {
+          if (cancelled || !bootstrap) return;
+
+          setDataInfo((current) => ({
+            ...current,
+            bootstrap,
+          }));
+        });
       } catch (error) {
         if (cancelled) return;
 
@@ -622,6 +979,120 @@ export function useDashboardController() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (dataInfo.mode !== "database") {
+      attendanceDetailStatusRef.current = "idle";
+      olDetailStatusRef.current = "idle";
+    }
+  }, [dataInfo.mode]);
+
+  useEffect(() => {
+    if (dataSource.attendanceDaily.length) {
+      attendanceDetailStatusRef.current = "loaded";
+    }
+  }, [dataSource.attendanceDaily.length]);
+
+  useEffect(() => {
+    if (dataSource.olTickets.length) {
+      olDetailStatusRef.current = "loaded";
+    }
+  }, [dataSource.olTickets.length]);
+
+  useEffect(() => {
+    if (dataInfo.mode !== "database" || activeView !== "attendance") {
+      return;
+    }
+
+    if (dataSource.attendanceDaily.length || attendanceDetailStatusRef.current === "loading" || attendanceDetailStatusRef.current === "loaded") {
+      return;
+    }
+
+    let cancelled = false;
+    attendanceDetailStatusRef.current = "loading";
+
+    fetchReport("attendance", {}, { all: true })
+      .then((attendanceRows) => {
+        if (cancelled) return;
+
+        const attendanceDailyRows = mapAttendanceDailyRows(attendanceRows);
+        startTransition(() => {
+          setDataSource((current) => ({
+            ...current,
+            attendanceDaily: attendanceDailyRows,
+          }));
+          setDataInfo((current) => ({
+            ...current,
+            stats: {
+              ...(current.stats || {}),
+              attendanceImported: attendanceDailyRows.length,
+            },
+          }));
+        });
+        attendanceDetailStatusRef.current = "loaded";
+      })
+      .catch((error) => {
+        if (cancelled) return;
+
+        attendanceDetailStatusRef.current = "idle";
+        setDataInfo((current) => ({
+          ...current,
+          error: `Attendance detail load failed. ${error.message || ""}`.trim(),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, dataInfo.mode, dataSource.attendanceDaily.length]);
+
+  useEffect(() => {
+    if (dataInfo.mode !== "database" || activeView !== "ol") {
+      return;
+    }
+
+    if (dataSource.olTickets.length || olDetailStatusRef.current === "loading" || olDetailStatusRef.current === "loaded") {
+      return;
+    }
+
+    let cancelled = false;
+    olDetailStatusRef.current = "loading";
+
+    fetchReport("ol", {}, { all: true })
+      .then((olRows) => {
+        if (cancelled) return;
+
+        const olTicketRows = olRows.map((row) => buildOlTicketRow(row));
+        startTransition(() => {
+          setDataSource((current) => ({
+            ...current,
+            ol: aggregateOlTickets(olTicketRows),
+            olTickets: olTicketRows,
+          }));
+          setDataInfo((current) => ({
+            ...current,
+            stats: {
+              ...(current.stats || {}),
+              olTickets: olTicketRows.length,
+            },
+          }));
+        });
+        olDetailStatusRef.current = "loaded";
+      })
+      .catch((error) => {
+        if (cancelled) return;
+
+        olDetailStatusRef.current = "idle";
+        setDataInfo((current) => ({
+          ...current,
+          error: `OL detail load failed. ${error.message || ""}`.trim(),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, dataInfo.mode, dataSource.olTickets.length]);
 
   const viewMonthOptions = useMemo(
     () => Object.fromEntries(FILTERABLE_VIEWS.map((view) => [view, getAvailableMonthsForView(dataSource, view)])),
@@ -652,9 +1123,12 @@ export function useDashboardController() {
       FILTERABLE_VIEWS.forEach((view) => {
         const viewMonths = viewMonthOptions[view] || getAvailableMonthsForView(dataSource, view);
         const existingFilters = current[view] || createInitialFilters(dataSource, view);
+        const preferredMonths = view === "dashboard" ? viewMonths.filter((month) => !isAllMonthsValue(month)) : viewMonths;
         const nextMonth = viewMonths.includes(existingFilters.month)
           ? existingFilters.month
-          : getPreferredMonth(viewMonths);
+          : view === "faults" || view === "ol"
+            ? ALL_MONTHS
+            : getPreferredMonth(preferredMonths.length ? preferredMonths : viewMonths);
 
         if (!current[view] || nextMonth !== existingFilters.month) {
           changed = true;
@@ -702,14 +1176,26 @@ export function useDashboardController() {
     window.localStorage.setItem("qpms-attendance-aop-overrides", JSON.stringify(attendanceAopOverrides));
   }, [attendanceAopOverrides]);
 
-  const unifiedData = useMemo(() => createUnifiedDataset(dataSource, activeFilters.month), [dataSource, activeFilters.month]);
+  const activeReportMonths = useMemo(
+    () =>
+      activeView === "faults" || activeView === "ol"
+        ? (viewMonthOptions[activeView] || []).filter((month) => !isAllMonthsValue(month))
+        : null,
+    [activeView, viewMonthOptions],
+  );
+  const activeReportMonthSet = useMemo(() => (activeReportMonths ? new Set(activeReportMonths) : null), [activeReportMonths]);
+
+  const unifiedData = useMemo(
+    () => createUnifiedDataset(dataSource, activeFilters.month, { reportMonths: activeReportMonths }),
+    [dataSource, activeFilters.month, activeReportMonths],
+  );
 
   const filterOptions = useMemo(
     () => ({
-      ...getFilterOptions(unifiedData),
+      ...getFilterOptions(unifiedData, dataSource.stores),
       months: availableMonths,
     }),
-    [unifiedData, availableMonths],
+    [unifiedData, dataSource.stores, availableMonths],
   );
 
   const filteredRows = useMemo(
@@ -717,7 +1203,10 @@ export function useDashboardController() {
     [unifiedData, activeFilters, effectiveReportType],
   );
 
-  const kpis = useMemo(() => calculateKpis(filteredRows, effectiveReportType), [filteredRows, effectiveReportType]);
+  const kpis = useMemo(
+    () => calculateKpis(filteredRows, effectiveReportType, { month: activeFilters.month }),
+    [filteredRows, effectiveReportType, activeFilters.month],
+  );
   const pivotRows = useMemo(() => buildPivotRows(filteredRows, groupBy), [filteredRows, groupBy]);
   const trendItems = useMemo(() => buildTrendSnapshot(dataSource), [dataSource]);
   const summary = useMemo(() => getDataSourceSummary(dataSource), [dataSource]);
@@ -740,35 +1229,62 @@ export function useDashboardController() {
     const visibleStoreIds = new Set(filteredRows.map((row) => row.storeId));
 
     return workflowSourceRows
-      .filter((row) => row.month === activeFilters.month && visibleStoreIds.has(row.storeId))
+      .filter((row) => {
+        const matchesMonth = isAllMonthsValue(activeFilters.month)
+          ? !activeReportMonthSet || activeReportMonthSet.has(row.month)
+          : row.month === activeFilters.month;
+
+        return matchesMonth && visibleStoreIds.has(row.storeId);
+      })
       .filter((row) => {
         if (!activeFilters.search) return true;
 
-        return `${row.ticketNumber} ${row.storeName} ${row.issueTitle} ${row.category}`
+        return `${row.ticketNumber} ${row.storeName} ${row.issueTitle} ${row.category} ${row.status} ${row.statusNote || ""} ${row.remark || ""}`
           .toLowerCase()
           .includes(activeFilters.search.toLowerCase());
       })
       .map((row) => ({
         ...row,
         workflowStage: workflowUpdates[row.ticketNumber]?.stage || row.workflowStage,
-        remark: faultRemarks[row.ticketNumber] || "",
+        remark: faultRemarks[row.ticketNumber] ?? row.statusNote ?? "",
       }));
-  }, [faultRemarks, filteredRows, activeFilters.month, activeFilters.search, workflowSourceRows, workflowUpdates]);
+  }, [activeReportMonthSet, faultRemarks, filteredRows, activeFilters.month, activeFilters.search, workflowSourceRows, workflowUpdates]);
 
   const scopedWorkflowRows = useMemo(
-    () => filteredWorkflowRows.filter((row) => canRoleSeeStage(currentRole, getStageIndex(row.workflowStage))),
-    [currentRole, filteredWorkflowRows],
+    () =>
+      activeView === "faults"
+        ? filteredWorkflowRows
+        : filteredWorkflowRows.filter((row) => canRoleSeeStage(currentRole, getStageIndex(row.workflowStage))),
+    [activeView, currentRole, filteredWorkflowRows],
   );
 
   const scopedWorkflowStoreIds = useMemo(() => new Set(scopedWorkflowRows.map((row) => row.storeId)), [scopedWorkflowRows]);
 
   const scopedReportRows = useMemo(() => {
-    if (activeView === "faults" || activeView === "ol") {
+    if (activeView === "ol") {
       return filteredRows.filter((row) => scopedWorkflowStoreIds.has(row.storeId));
     }
 
     return filteredRows;
   }, [activeView, filteredRows, scopedWorkflowStoreIds]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    const rawFaultTicketCount = dataSource.faultValidation?.importedDbRowCount || 0;
+    const groupedTotalFaults = dataSource.faultValidation?.groupedTotalFaults || 0;
+    const displayedDashboardTotal =
+      effectiveReportType === "Fault Report"
+        ? filteredRows.reduce((sum, row) => sum + (row.faults?.totalFaults || 0), 0)
+        : 0;
+
+    console.debug("[QPMS fault reconciliation]", {
+      scopeMonth: activeFilters.month,
+      rawFaultTicketCount,
+      groupedTotalFaults,
+      displayedDashboardTotal,
+    });
+  }, [dataSource.faultValidation, effectiveReportType, filteredRows, activeFilters.month]);
 
   const attendanceSummary = useMemo(
     () => buildAttendanceSummary(dataSource, activeFilters.month, selectedAttendanceDate, attendanceAopOverrides[activeFilters.month] || {}),
@@ -860,8 +1376,6 @@ export function useDashboardController() {
   };
 
   const handleRemarkChange = (ticketNumber, remark) => {
-    if (!roleConfig.canEditFaultRemarks) return;
-
     setFaultRemarks((current) => ({
       ...current,
       [ticketNumber]: remark,
@@ -992,6 +1506,11 @@ export function useDashboardController() {
     return upsertStoreMasterRow(result.store);
   };
 
+  const handleStoreUpdate = async (storeCode, updates) => {
+    const result = await updateMasterStoreDetails(storeCode, updates);
+    return upsertStoreMasterRow(result.store);
+  };
+
   const handleStoreStatusChange = async (storeCode, status) => {
     const result = await updateMasterStoreStatus(storeCode, status);
     return upsertStoreMasterRow(result.store);
@@ -1026,7 +1545,12 @@ export function useDashboardController() {
   const hero = viewMeta[activeView] || viewMeta.dashboard;
   const showFilterPanel = activeView !== "data-sync" && activeView !== "reports" && activeView !== "po-lab" && activeView !== "stores";
   const showKpis = activeView !== "data-sync" && activeView !== "reports" && activeView !== "po-lab" && activeView !== "stores";
-  const visibleStoreCount = activeView === "faults" || activeView === "ol" ? scopedReportRows.length : filteredRows.length;
+  const visibleStoreCount =
+    activeView === "faults"
+      ? scopedWorkflowRows.length
+      : activeView === "ol"
+        ? scopedWorkflowRows.length
+        : filteredRows.length;
 
   const heroStats =
     activeView === "data-sync"
@@ -1103,6 +1627,7 @@ export function useDashboardController() {
     handleRemarkChange,
     handleSyncRawDatabase,
     handleStageChange,
+    handleStoreUpdate,
     handleStoreStatusChange,
     handleUseDemoData,
     handleWorkflowFileChange,

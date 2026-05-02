@@ -16,10 +16,28 @@ function normalizeStatus(value) {
   return text === "inactive" || text === "deactivated" ? "Inactive" : "Active";
 }
 
+function hasOwn(payload, key) {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
+
+function normalizeState(value) {
+  return clean(value).toUpperCase();
+}
+
+function validateStoreDetails(store) {
+  if (!VALID_STATES.has(store.state)) {
+    throw badRequest(`State must be one of: ${[...VALID_STATES].join(", ")}.`);
+  }
+
+  if (!VALID_STATUSES.has(store.status)) {
+    throw badRequest("Status must be Active or Inactive.");
+  }
+}
+
 function normalizeStorePayload(payload = {}) {
   const store = {
     store_code: clean(payload.storeCode || payload.store_code),
-    state: clean(payload.state).toUpperCase(),
+    state: normalizeState(payload.state),
     server: clean(payload.server),
     business: clean(payload.business),
     status: normalizeStatus(payload.status),
@@ -29,13 +47,25 @@ function normalizeStorePayload(payload = {}) {
     throw badRequest("Store code is required.");
   }
 
-  if (!VALID_STATES.has(store.state)) {
-    throw badRequest(`State must be one of: ${[...VALID_STATES].join(", ")}.`);
-  }
+  validateStoreDetails(store);
 
-  if (!VALID_STATUSES.has(store.status)) {
-    throw badRequest("Status must be Active or Inactive.");
-  }
+  return store;
+}
+
+function normalizeStoreUpdatePayload(existingStore, payload = {}) {
+  const hasState = hasOwn(payload, "state") || hasOwn(payload, "region");
+  const hasServer = hasOwn(payload, "server");
+  const hasBusiness = hasOwn(payload, "business");
+  const hasStatus = hasOwn(payload, "status");
+
+  const store = {
+    state: hasState ? normalizeState(payload.state ?? payload.region) : normalizeState(existingStore.state),
+    server: hasServer ? clean(payload.server) : clean(existingStore.server),
+    business: hasBusiness ? clean(payload.business) : clean(existingStore.business),
+    status: hasStatus ? normalizeStatus(payload.status) : normalizeStatus(existingStore.status),
+  };
+
+  validateStoreDetails(store);
 
   return store;
 }
@@ -82,38 +112,50 @@ export async function createMasterStore(pool, payload) {
   }
 }
 
-export async function updateMasterStoreStatus(pool, storeCode, payload) {
+export async function updateMasterStoreDetails(pool, storeCode, payload) {
   await ensureStoreTable(pool);
   const normalizedStoreCode = clean(storeCode);
-  const rawStatus = clean(payload?.status);
-  const status = rawStatus ? normalizeStatus(rawStatus) : "";
 
   if (!normalizedStoreCode) {
     throw badRequest("Store code is required.");
   }
 
-  if (!status || !VALID_STATUSES.has(status)) {
-    throw badRequest("Status must be Active or Inactive.");
-  }
-
-  const result = await pool.query(
+  const existingResult = await pool.query(
     `
-      update qpms_master.stores
-      set status = $2
+      select store_code, state, server, business, status
+      from qpms_master.stores
       where store_code = $1
-      returning store_code, state, server, business, status
     `,
-    [normalizedStoreCode, status],
+    [normalizedStoreCode],
   );
 
-  if (!result.rows.length) {
+  if (!existingResult.rows.length) {
     const notFoundError = new Error(`Store code ${normalizedStoreCode} was not found.`);
     notFoundError.statusCode = 404;
     throw notFoundError;
   }
 
+  const store = normalizeStoreUpdatePayload(existingResult.rows[0], payload);
+
+  const result = await pool.query(
+    `
+      update qpms_master.stores
+      set state = $2,
+          server = $3,
+          business = $4,
+          status = $5
+      where store_code = $1
+      returning store_code, state, server, business, status
+    `,
+    [normalizedStoreCode, store.state, store.server, store.business, store.status],
+  );
+
   return {
     ok: true,
     store: result.rows[0],
   };
+}
+
+export async function updateMasterStoreStatus(pool, storeCode, payload) {
+  return updateMasterStoreDetails(pool, storeCode, payload);
 }

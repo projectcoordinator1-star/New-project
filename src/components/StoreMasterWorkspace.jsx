@@ -14,20 +14,32 @@ function normalizeStatus(value) {
   return String(value || "").toLowerCase() === "inactive" ? "Inactive" : "Active";
 }
 
+function createEditForm(store = {}) {
+  return {
+    state: store.region || store.state || "TN",
+    server: store.server || "",
+    business: store.business || "",
+    status: normalizeStatus(store.status),
+  };
+}
+
 function StatusPill({ status }) {
   const normalized = normalizeStatus(status);
   return <span className={`store-status-pill store-status-pill--${normalized.toLowerCase()}`}>{normalized}</span>;
 }
 
-export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }) {
+export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange, onUpdateStore }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [stateFilter, setStateFilter] = useState("All");
   const [sortBy, setSortBy] = useState("storeId");
   const [form, setForm] = useState(initialForm);
-  const [message, setMessage] = useState("");
+  const [formMessage, setFormMessage] = useState("");
+  const [tableMessage, setTableMessage] = useState("");
   const [pendingCode, setPendingCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [editingStoreId, setEditingStoreId] = useState("");
+  const [editForm, setEditForm] = useState(() => createEditForm());
 
   const normalizedStores = useMemo(
     () =>
@@ -41,6 +53,11 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
   const stateOptions = useMemo(() => {
     const dynamicStates = [...new Set(normalizedStores.map((store) => store.region).filter(Boolean))];
     return ["All", ...dynamicStates.sort((left, right) => left.localeCompare(right))];
+  }, [normalizedStores]);
+
+  const editableStateOptions = useMemo(() => {
+    const dynamicStates = normalizedStores.map((store) => store.region).filter(Boolean);
+    return [...new Set([...STATE_OPTIONS, ...dynamicStates])].sort((left, right) => left.localeCompare(right));
   }, [normalizedStores]);
 
   const filteredStores = useMemo(() => {
@@ -81,20 +98,20 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
 
   const handleFormChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
-    setMessage("");
+    setFormMessage("");
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setIsSaving(true);
-    setMessage("");
+    setFormMessage("");
 
     try {
       await onAddStore(form);
       setForm(initialForm);
-      setMessage(`Store ${form.storeCode.trim()} added to master data.`);
+      setFormMessage(`Store ${form.storeCode.trim()} added to master data.`);
     } catch (error) {
-      setMessage(error.message || "Unable to add store.");
+      setFormMessage(error.message || "Unable to add store.");
     } finally {
       setIsSaving(false);
     }
@@ -103,13 +120,45 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
   const handleToggleStatus = async (store) => {
     const nextStatus = store.status === "Active" ? "Inactive" : "Active";
     setPendingCode(store.storeId);
-    setMessage("");
+    setTableMessage("");
 
     try {
       await onStatusChange(store.storeId, nextStatus);
-      setMessage(`Store ${store.storeId} marked ${nextStatus}.`);
+      setTableMessage(`Store ${store.storeId} marked ${nextStatus}.`);
     } catch (error) {
-      setMessage(error.message || "Unable to update store status.");
+      setTableMessage(error.message || "Unable to update store status.");
+    } finally {
+      setPendingCode("");
+    }
+  };
+
+  const handleStartEdit = (store) => {
+    setEditingStoreId(store.storeId);
+    setEditForm(createEditForm(store));
+    setTableMessage("");
+  };
+
+  const handleEditChange = (field, value) => {
+    setEditForm((current) => ({ ...current, [field]: value }));
+    setTableMessage("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStoreId("");
+    setEditForm(createEditForm());
+    setTableMessage("");
+  };
+
+  const handleSaveEdit = async (store) => {
+    setPendingCode(store.storeId);
+    setTableMessage("");
+
+    try {
+      await onUpdateStore(store.storeId, editForm);
+      setEditingStoreId("");
+      setTableMessage(`Store ${store.storeId} details updated.`);
+    } catch (error) {
+      setTableMessage(error.message || "Unable to update store details.");
     } finally {
       setPendingCode("");
     }
@@ -221,7 +270,7 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
             {isSaving ? "Saving..." : "Add Store"}
           </button>
 
-          {message ? <p className="store-master-message">{message}</p> : null}
+          {formMessage ? <p className="store-master-message">{formMessage}</p> : null}
         </form>
 
         <div className="store-master-results">
@@ -248,6 +297,8 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
             </div>
           </div>
 
+          {tableMessage ? <p className="store-master-message store-master-message--table">{tableMessage}</p> : null}
+
           <div className="store-master-table-wrap">
             <table className="data-table store-master-table">
               <thead>
@@ -261,29 +312,115 @@ export function StoreMasterWorkspace({ stores = [], onAddStore, onStatusChange }
                 </tr>
               </thead>
               <tbody>
-                {filteredStores.map((store) => (
-                  <tr key={store.storeId}>
-                    <td>
-                      <strong>{store.storeId}</strong>
-                    </td>
-                    <td>{store.region}</td>
-                    <td>{store.server || "--"}</td>
-                    <td>{store.business || "--"}</td>
-                    <td>
-                      <StatusPill status={store.status} />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className={store.status === "Active" ? "danger-light-button" : "ghost-button"}
-                        disabled={pendingCode === store.storeId}
-                        onClick={() => handleToggleStatus(store)}
-                      >
-                        {pendingCode === store.storeId ? "Updating..." : store.status === "Active" ? "Deactivate" : "Activate"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredStores.map((store) => {
+                  const isEditing = editingStoreId === store.storeId;
+                  const isPending = pendingCode === store.storeId;
+
+                  return (
+                    <tr key={store.storeId} className={isEditing ? "store-master-row--editing" : undefined}>
+                      <td>
+                        <strong>{store.storeId}</strong>
+                        {isEditing ? <span className="store-code-lock">Locked</span> : null}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <select
+                            className="store-master-inline-field"
+                            value={editForm.state}
+                            onChange={(event) => handleEditChange("state", event.target.value)}
+                          >
+                            {editableStateOptions.map((state) => (
+                              <option key={state} value={state}>
+                                {state}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          store.region
+                        )}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className="store-master-inline-field"
+                            value={editForm.server}
+                            placeholder="419 / 451"
+                            onChange={(event) => handleEditChange("server", event.target.value)}
+                          />
+                        ) : (
+                          store.server || "--"
+                        )}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className="store-master-inline-field"
+                            value={editForm.business}
+                            placeholder="Business"
+                            onChange={(event) => handleEditChange("business", event.target.value)}
+                          />
+                        ) : (
+                          store.business || "--"
+                        )}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <select
+                            className="store-master-inline-field"
+                            value={editForm.status}
+                            onChange={(event) => handleEditChange("status", event.target.value)}
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
+                        ) : (
+                          <StatusPill status={store.status} />
+                        )}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <div className="store-master-row-actions">
+                            <button
+                              type="button"
+                              className="excel-button store-master-action-button"
+                              disabled={isPending}
+                              onClick={() => handleSaveEdit(store)}
+                            >
+                              {isPending ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button store-master-action-button"
+                              disabled={isPending}
+                              onClick={handleCancelEdit}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="store-master-row-actions">
+                            <button
+                              type="button"
+                              className="ghost-button store-master-action-button"
+                              disabled={isPending}
+                              onClick={() => handleStartEdit(store)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className={`${store.status === "Active" ? "danger-light-button" : "ghost-button"} store-master-action-button`}
+                              disabled={isPending}
+                              onClick={() => handleToggleStatus(store)}
+                            >
+                              {isPending ? "Updating..." : store.status === "Active" ? "Deactivate" : "Activate"}
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
