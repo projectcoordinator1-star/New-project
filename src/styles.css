@@ -998,6 +998,184 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
+/* Responsive Overrides */
+@media (max-width: 1200px) {
+  .app-shell {
+    grid-template-columns: 80px 1fr;
+  }
+
+  .sidebar {
+    padding: 24px 10px;
+  }
+
+  .brand h1,
+  .brand p,
+  .sidebar__label,
+  .sidebar__coming-soon,
+  .sidebar__status,
+  .sidebar__footer,
+  .sidebar__heading {
+    display: none;
+  }
+
+  .sidebar__icon {
+    margin: 0 auto;
+  }
+
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 992px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    position: relative;
+    top: 0;
+  }
+
+  .topbar__actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .role-chip {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .filters-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .training-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 1000;
+    transition: left 0.3s ease;
+    display: flex;
+    padding: 24px 18px;
+  }
+
+  .sidebar.is-mobile-open {
+    left: 0;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 999;
+  }
+
+  .sidebar-close {
+    background: rgba(255, 255, 255, 0.1);
+    border: 0;
+    color: white;
+    font-size: 2rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    margin-left: auto;
+  }
+
+  .brand h1,
+  .brand p,
+  .sidebar__label,
+  .sidebar__status,
+  .sidebar__footer,
+  .sidebar__heading {
+    display: block;
+  }
+
+  .sidebar__heading {
+    display: flex;
+  }
+
+  .mobile-menu-trigger {
+    display: block;
+    background: transparent;
+    border: 0;
+    font-size: 1.5rem;
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+
+  .topbar__menu,
+  .topbar__shortcut {
+    display: none;
+  }
+
+  .filters-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+  }
+
+  .data-table {
+    min-width: 800px;
+  }
+
+  .user-chip strong,
+  .user-chip span {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero h2 {
+    font-size: 1.5rem;
+  }
+
+  .hero__metrics {
+    flex-direction: column;
+  }
+
+  .hero__metric {
+    width: 100%;
+  }
+}
+
+.mobile-menu-trigger {
+  display: none;
+}
+
 .training-upload-zone.has-preview {
   border-style: solid;
   background: #fff;
@@ -2988,6 +3166,24 @@ textarea:focus-visible {
 .workflow-inline-input::placeholder {
   color: #a0aec0;
   font-size: 0.8rem;
+}
+
+/* Scrollable Table Fix */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 1rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+@media (max-width: 768px) {
+  .data-table {
+    min-width: 900px; /* Ensure tables don't squish too much */
+  }
 }
 
 .remark-button {

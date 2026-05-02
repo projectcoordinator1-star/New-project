@@ -56,52 +56,65 @@ const itemAbbreviations = {
   "system-settings": "SS",
 };
 
-export function Sidebar({ activeView, onNavigate }) {
+export function Sidebar({ activeView, onNavigate, mobileOpen, onMobileClose }) {
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand__logo">Q</div>
-        <div>
-          <h1>QPMS Ops</h1>
-          <p>Quality. Property. Visibility.</p>
-        </div>
-      </div>
-
-      <div className="sidebar__status">
-        <strong>Store Operations Command Center</strong>
-        <span>Track attendance, faults, thermography, OL jobs, and compliance workflows in one workspace.</span>
-      </div>
-
-      <nav className="sidebar__nav">
-        {sections.map((section) => (
-          <div key={section.title} className="sidebar__section">
-            <span className="sidebar__heading">
-              {section.title}
-              <b>{section.items.filter((item) => item.enabled).length}</b>
-            </span>
-            {section.items.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                disabled={!item.enabled}
-                className={`sidebar__link ${activeView === item.id ? "is-active" : ""} ${!item.enabled ? "is-disabled" : ""}`}
-                onClick={() => item.enabled && onNavigate(item.id)}
-              >
-                <span className="sidebar__icon">{itemAbbreviations[item.id] || item.label.slice(0, 2).toUpperCase()}</span>
-                <span className="sidebar__label">{item.label}</span>
-                {!item.enabled ? <small className="sidebar__coming-soon">Soon</small> : null}
-              </button>
-            ))}
+    <>
+      {mobileOpen && <div className="sidebar-overlay" onClick={onMobileClose} />}
+      <aside className={`sidebar ${mobileOpen ? "is-mobile-open" : ""}`}>
+        <div className="brand">
+          <div className="brand__logo">Q</div>
+          <div>
+            <h1>QPMS Ops</h1>
+            <p>Quality. Property. Visibility.</p>
           </div>
-        ))}
-      </nav>
-
-      <div className="sidebar__footer">
-        <div className="sidebar__footer-card">
-          <strong>Phase 2 Ready</strong>
-          <span>Spring Boot, database-backed updates, and team-level approvals can fit on top of this UI.</span>
+          {mobileOpen && (
+            <button type="button" className="sidebar-close" onClick={onMobileClose}>
+              ×
+            </button>
+          )}
         </div>
-      </div>
-    </aside>
+
+        <div className="sidebar__status">
+          <strong>Store Operations Command Center</strong>
+          <span>Track attendance, faults, thermography, OL jobs, and compliance workflows in one workspace.</span>
+        </div>
+
+        <nav className="sidebar__nav">
+          {sections.map((section) => (
+            <div key={section.title} className="sidebar__section">
+              <span className="sidebar__heading">
+                {section.title}
+                <b>{section.items.filter((item) => item.enabled).length}</b>
+              </span>
+              {section.items.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  disabled={!item.enabled}
+                  className={`sidebar__link ${activeView === item.id ? "is-active" : ""} ${!item.enabled ? "is-disabled" : ""}`}
+                  onClick={() => {
+                    if (item.enabled) {
+                      onNavigate(item.id);
+                      onMobileClose && onMobileClose();
+                    }
+                  }}
+                >
+                  <span className="sidebar__icon">{itemAbbreviations[item.id] || item.label.slice(0, 2).toUpperCase()}</span>
+                  <span className="sidebar__label">{item.label}</span>
+                  {!item.enabled ? <small className="sidebar__coming-soon">Soon</small> : null}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar__footer">
+          <div className="sidebar__footer-card">
+            <strong>Phase 2 Ready</strong>
+            <span>Spring Boot, database-backed updates, and team-level approvals can fit on top of this UI.</span>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }

@@ -10,6 +10,7 @@ import { useDashboardController } from "./hooks/useDashboardController";
 
 function App() {
   const controller = useDashboardController();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const {
     activeFilters,
     activeView,
@@ -60,7 +61,12 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar activeView={activeView} onNavigate={onNavigate} />
+      <Sidebar
+        activeView={activeView}
+        onNavigate={onNavigate}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
 
       <main className="content">
         <Header
@@ -71,6 +77,7 @@ function App() {
           dataInfo={dataInfo}
           visibleStoreCount={visibleStoreCount}
           effectiveReportType={effectiveReportType}
+          onMobileMenuOpen={() => setMobileSidebarOpen(true)}
         />
 
         {activeView !== "stores" && activeView !== "attendance" ? (
