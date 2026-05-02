@@ -16,6 +16,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top right, rgba(95, 168, 255, 0.2), transparent 30%),
     linear-gradient(180deg, #f5f8fc, #edf2f8);
@@ -4833,5 +4834,441 @@ textarea:focus-visible {
 
   .workflow-modal__meta {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Final mobile browser pass: keep these late so they win over older breakpoints. */
+@media (max-width: 900px) {
+  .app-shell {
+    display: block;
+    min-width: 0;
+  }
+
+  .content {
+    width: 100%;
+    min-width: 0;
+    padding: 14px;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1000;
+    display: flex;
+    width: min(86vw, 320px);
+    max-width: 320px;
+    padding: 18px 16px;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+  }
+
+  .sidebar.is-mobile-open {
+    transform: translateX(0);
+    box-shadow: 18px 0 42px rgba(7, 25, 48, 0.28);
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    display: block;
+    background: rgba(9, 25, 43, 0.48);
+    backdrop-filter: blur(4px);
+  }
+
+  .brand {
+    padding: 4px 4px 14px;
+  }
+
+  .brand h1,
+  .brand p,
+  .sidebar__label,
+  .sidebar__coming-soon,
+  .sidebar__status,
+  .sidebar__footer,
+  .sidebar__heading {
+    display: block;
+  }
+
+  .sidebar__heading {
+    display: flex;
+  }
+
+  .sidebar__link {
+    min-height: 46px;
+  }
+
+  .sidebar-close {
+    margin-left: auto;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mobile-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    min-height: 38px;
+    border: 1px solid #d4e2f1;
+    border-radius: 999px;
+    background: #f8fbff;
+    color: #173252;
+    font-size: 0.8rem;
+    font-weight: 800;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .topbar {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 14px;
+    border-radius: 24px;
+  }
+
+  .topbar__intro,
+  .topbar__search {
+    min-width: 0;
+  }
+
+  .topbar__search {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .topbar__search input {
+    min-width: 0;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+  }
+
+  .topbar__menu,
+  .topbar__shortcut {
+    display: none;
+  }
+
+  .topbar__meta {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .topbar__meta-pill {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .topbar__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+  }
+
+  .date-chip,
+  .role-chip,
+  .user-chip {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .user-chip {
+    justify-content: flex-start;
+  }
+
+  .topbar__strip {
+    gap: 8px;
+  }
+
+  .topbar__strip-pill {
+    width: 100%;
+    min-width: 0;
+    justify-content: space-between;
+  }
+
+  .hero,
+  .filters-card,
+  .panel,
+  .training-hero,
+  .reports-launcher {
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .hero,
+  .filters-card__header,
+  .panel__header,
+  .reports-launcher__main,
+  .sync-workbench__header {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero {
+    gap: 16px;
+  }
+
+  .hero::after {
+    width: 220px;
+    height: 220px;
+    right: -100px;
+    bottom: -120px;
+  }
+
+  .hero h2,
+  .filters-card__header h2 {
+    font-size: clamp(1.4rem, 7vw, 2.05rem);
+    line-height: 1.05;
+  }
+
+  .hero__copy,
+  .filters-card__header p,
+  .panel__header p {
+    font-size: 0.92rem;
+  }
+
+  .hero__badge {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hero__metrics,
+  .filters-card__meta,
+  .filter-summary,
+  .panel__actions,
+  .training-hero__actions,
+  .training-export-actions,
+  .deep-cleaning-evidence-actions,
+  .attendance-date-range,
+  .attendance-pagination__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters-card__stat {
+    width: 100%;
+  }
+
+  .filters-grid,
+  .kpi-grid,
+  .insight-grid,
+  .insight-grid--bottom,
+  .report-insight-grid,
+  .workflow-grid,
+  .fault-remarks-grid,
+  .data-source-grid,
+  .data-sync-sections,
+  .reports-layout,
+  .report-summary-grid,
+  .source-map-grid,
+  .training-layout,
+  .training-field-grid,
+  .training-summary-grid,
+  .training-state-grid,
+  .deep-cleaning-evidence-controls,
+  .deep-cleaning-evidence-form__meta,
+  .deep-cleaning-evidence-grid,
+  .before-after-grid,
+  .store-master-grid,
+  .store-master-controls,
+  .attendance-summary-strip,
+  .attendance-aop-editor,
+  .attendance-aop-strip,
+  .po-lab__workspace,
+  .po-lab__quote-grid,
+  .po-lab__upload-row,
+  .po-lab__controls,
+  .po-lab__detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-field--wide {
+    grid-column: auto;
+  }
+
+  .primary-button,
+  .ghost-button,
+  .excel-button,
+  .date-chip {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .table-scroll,
+  .store-master-table-wrap,
+  .workflow-table-wrap,
+  .reports-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 16px;
+  }
+
+  .data-table,
+  .data-table--detail {
+    min-width: 760px;
+  }
+
+  .data-table--attendance-raw {
+    min-width: 1320px;
+  }
+
+  .store-master-table {
+    min-width: 900px;
+  }
+
+  .attendance-table-controls,
+  .attendance-pagination {
+    display: grid;
+    justify-items: stretch;
+  }
+
+  .attendance-table-search,
+  .attendance-table-search input,
+  .attendance-date-range label,
+  .attendance-date-range input {
+    width: 100%;
+  }
+
+  .store-add-card {
+    position: static;
+  }
+
+  .store-stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .training-gallery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .training-store-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .content {
+    padding: 10px;
+  }
+
+  .topbar,
+  .hero,
+  .filters-card,
+  .panel,
+  .training-hero,
+  .reports-launcher,
+  .sync-workbench,
+  .store-add-card,
+  .store-master-results {
+    border-radius: 18px;
+  }
+
+  .topbar__search input {
+    font-size: 0.86rem;
+  }
+
+  .topbar__meta-pill,
+  .topbar__strip-pill,
+  .filter-chip {
+    font-size: 0.72rem;
+  }
+
+  .hero__metrics,
+  .filter-summary {
+    gap: 8px;
+  }
+
+  .hero__metric,
+  .filter-chip {
+    width: 100%;
+  }
+
+  .kpi-card {
+    padding: 14px;
+  }
+
+  .kpi-card__value,
+  .kpi-card h3 {
+    font-size: 1.55rem;
+  }
+
+  .panel__header h3,
+  .training-gallery__header h3 {
+    font-size: 1.15rem;
+  }
+
+  .filter-field select,
+  .filter-field input,
+  .store-add-card input,
+  .store-add-card select,
+  .store-master-control-group select,
+  .store-master-control-group input,
+  .training-field select,
+  .training-field input,
+  .training-field textarea {
+    min-height: 44px;
+  }
+
+  .user-chip strong,
+  .user-chip span {
+    display: block;
+  }
+
+  .user-chip__avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .store-stat-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .cleaning-image-card__gallery,
+  .deep-cleaning-saved-strip div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .mobile-menu-trigger {
+    min-width: 46px;
+    padding-inline: 10px;
+  }
+
+  .topbar__search {
+    gap: 6px;
+  }
+
+  .topbar__search input {
+    font-size: 0.8rem;
+  }
+
+  .sidebar {
+    width: 92vw;
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand__logo {
+    width: 40px;
+    height: 40px;
   }
 }

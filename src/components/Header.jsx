@@ -21,8 +21,8 @@ export function Header({
     <header className="topbar">
       <div className="topbar__intro">
         <div className="topbar__search">
-          <button type="button" className="mobile-menu-trigger" onClick={onMobileMenuOpen}>
-            ☰
+          <button type="button" className="mobile-menu-trigger" onClick={onMobileMenuOpen} aria-label="Open navigation menu">
+            Menu
           </button>
           <span className="topbar__menu">||</span>
           <input type="text" value="Search stores, sites, reports..." readOnly aria-label="Search" />

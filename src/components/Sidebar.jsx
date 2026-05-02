@@ -68,8 +68,8 @@ export function Sidebar({ activeView, onNavigate, mobileOpen, onMobileClose }) {
             <p>Quality. Property. Visibility.</p>
           </div>
           {mobileOpen && (
-            <button type="button" className="sidebar-close" onClick={onMobileClose}>
-              ×
+            <button type="button" className="sidebar-close" onClick={onMobileClose} aria-label="Close navigation menu">
+              Close
             </button>
           )}
         </div>
