@@ -23,7 +23,7 @@ function getReconciliationRows(summary, bootstrapCounts = {}) {
     { label: "Stores", app: summary.stores, db: bootstrapCounts.stores },
     { label: "Attendance Raw", app: summary.attendanceDaily, db: bootstrapCounts.attendanceRows },
     { label: "Fault Tickets", app: summary.faultTickets, db: bootstrapCounts.faults },
-    { label: "OL Line Items", app: summary.ol, db: bootstrapCounts.olItems },
+    { label: "OL Line Items", app: summary.olTickets, db: bootstrapCounts.olItems },
     { label: "Thermography", app: summary.thermography, db: bootstrapCounts.thermographyRows },
     { label: "Deep Cleaning", app: summary.cleaning, db: bootstrapCounts.deepCleaningRows },
     { label: "Manpower", app: summary.manpower, db: bootstrapCounts.manpowerRows },

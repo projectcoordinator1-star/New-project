@@ -953,6 +953,49 @@ textarea:focus-visible {
   resize: vertical;
 }
 
+.training-employee-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.training-employee-input-row .ghost-button {
+  min-height: 46px;
+  padding-inline: 18px;
+}
+
+.training-employee-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.training-employee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid #cfe0f3;
+  border-radius: 999px;
+  background: #f7fbff;
+  color: #173252;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.training-employee-chip button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: #eef4fb;
+  color: #5b7089;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .training-field select:disabled,
 .training-field input:disabled,
 .training-field textarea:disabled {

@@ -11,6 +11,8 @@ const FIELD_OFFICERS_BY_STATE = {
 const emptyForm = {
   stateName: "",
   fieldOffice: "",
+  employeeIdInput: "",
+  employeeIds: [],
   storeId: "",
   title: "",
   remarks: "",
@@ -53,6 +55,21 @@ function normalizeStore(row = {}) {
     formatName: String(firstPresent(row.format_name, row.formatName, "")).trim(),
     serverCode: String(firstPresent(row.server_code, row.serverCode, "")).trim(),
   };
+}
+
+function getStoreOptionLabel(store) {
+  return store ? `${store.storeName} (${store.storeId})` : "";
+}
+
+function findStoreFromSearchValue(stores, value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  return (
+    stores.find((store) =>
+      [store.storeId, store.storeName, getStoreOptionLabel(store)].some((candidate) => String(candidate || "").trim().toLowerCase() === normalized),
+    ) || null
+  );
 }
 
 function getImageUrl(imagePath) {
@@ -113,30 +130,95 @@ function safeSheetName(value) {
   return (name || "Unassigned FO").slice(0, 31);
 }
 
+function getEmployeeIdsText(item = {}) {
+  if (Array.isArray(item.employee_ids)) {
+    return item.employee_ids.filter(Boolean).join(", ");
+  }
+  return String(item.employee_id || "").trim();
+}
+
+function getStoreCodeSummary(items = [], fallback = "All") {
+  const storeCodes = uniqueSorted(items.map((item) => item.store_id));
+  if (storeCodes.length === 0) return fallback;
+  if (storeCodes.length <= 4) return storeCodes.join(", ");
+  return `${storeCodes.slice(0, 4).join(", ")} +${storeCodes.length - 4} more`;
+}
+
 function getPptImageLayouts(count) {
   if (count <= 1) {
-    return [{ x: 0.75, y: 1.5, w: 12, h: 4.85 }];
+    return [{ x: 0.75, y: 1.12, w: 11.85, h: 5.75 }];
   }
+
   if (count === 2) {
     return [
-      { x: 0.75, y: 1.55, w: 5.85, h: 4.75 },
-      { x: 6.9, y: 1.55, w: 5.85, h: 4.75 },
+      { x: 0.75, y: 1.15, w: 5.85, h: 5.65 },
+      { x: 6.85, y: 1.15, w: 5.85, h: 5.65 },
     ];
   }
+
   if (count === 3) {
     return [
-      { x: 0.75, y: 1.45, w: 5.85, h: 2.35 },
-      { x: 6.9, y: 1.45, w: 5.85, h: 2.35 },
-      { x: 3.85, y: 4.0, w: 5.85, h: 2.35 },
+      { x: 0.75, y: 1.15, w: 5.85, h: 2.75 },
+      { x: 6.85, y: 1.15, w: 5.85, h: 2.75 },
+      { x: 3.8, y: 4.12, w: 5.85, h: 2.75 },
     ];
   }
+
+  if (count === 4) {
+    return [
+      { x: 0.75, y: 1.15, w: 5.85, h: 2.75 },
+      { x: 6.85, y: 1.15, w: 5.85, h: 2.75 },
+      { x: 0.75, y: 4.12, w: 5.85, h: 2.75 },
+      { x: 6.85, y: 4.12, w: 5.85, h: 2.75 },
+    ];
+  }
+
   return [
-    { x: 0.75, y: 1.35, w: 5.85, h: 2.25 },
-    { x: 6.9, y: 1.35, w: 5.85, h: 2.25 },
-    { x: 0.75, y: 3.85, w: 5.85, h: 2.25 },
-    { x: 6.9, y: 3.85, w: 5.85, h: 2.25 },
-    { x: 3.85, y: 5.35, w: 5.85, h: 1.25 },
+    { x: 0.55, y: 1.15, w: 4.0, h: 2.75 },
+    { x: 4.75, y: 1.15, w: 4.0, h: 2.75 },
+    { x: 8.95, y: 1.15, w: 4.0, h: 2.75 },
+    { x: 2.65, y: 4.12, w: 4.0, h: 2.75 },
+    { x: 6.85, y: 4.12, w: 4.0, h: 2.75 },
   ].slice(0, count);
+}
+
+function splitEmployeeInput(value) {
+  return String(value || "")
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function dedupeValues(values = []) {
+  const seen = new Set();
+  const result = [];
+
+  values.forEach((value) => {
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(value);
+  });
+
+  return result;
+}
+
+function employeeIdLabel(value) {
+  return String(value || "").trim();
+}
+
+function compactEmployeeIds(ids = []) {
+  return dedupeValues(ids.map(employeeIdLabel).filter(Boolean));
+}
+
+function getPptImageSizing(layout) {
+  return { type: "cover", x: layout.x, y: layout.y, w: layout.w, h: layout.h };
+}
+
+function preventEnterSubmit(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+  }
 }
 
 export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
@@ -158,6 +240,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
   });
 
   const [form, setForm] = useState(emptyForm);
+  const [storeSearchText, setStoreSearchText] = useState("");
 
   const normalizedInitialStores = useMemo(
     () => initialStores.map(normalizeStore).filter((store) => store.storeId),
@@ -265,28 +348,16 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
     };
   }, [allStates, form.stateName, stores]);
 
-  const stateSummaries = useMemo(() => {
-    return allStates.map((stateName) => {
-      const stateStores = stores.filter((store) => store.stateName === stateName);
-      const fieldOfficerCount = getFieldOfficersForState(stateName).length;
-      return {
-        stateName,
-        storeCount: stateStores.length,
-        fieldOfficerCount,
-      };
-    });
-  }, [allStates, stores]);
-
-  const visibleStoreDetails = useMemo(() => {
-    return storeRowsForActiveState
-      .filter((store) => activeFilters.storeId === "All" || store.storeId === activeFilters.storeId)
-      .slice(0, 8);
-  }, [activeFilters.storeId, storeRowsForActiveState]);
-
   const selectedStoreForForm = useMemo(
     () => stores.find((store) => store.storeId === form.storeId),
     [form.storeId, stores],
   );
+
+  useEffect(() => {
+    if (selectedStoreForForm) {
+      setStoreSearchText(getStoreOptionLabel(selectedStoreForForm));
+    }
+  }, [selectedStoreForForm]);
 
   const handleFilterChange = (field, value) => {
     setActiveFilters((prev) => {
@@ -303,6 +374,10 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
   };
 
   const handleFormChange = (field, value) => {
+    if (field === "stateName") {
+      setStoreSearchText("");
+    }
+
     setForm((prev) => {
       const next = { ...prev, [field]: value };
       if (field === "stateName") {
@@ -311,6 +386,30 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
       }
       return next;
     });
+  };
+
+  const handleStoreSearchChange = (value) => {
+    setStoreSearchText(value);
+    const selectedStore = findStoreFromSearchValue(formOptions.stores, value);
+    handleFormChange("storeId", selectedStore?.storeId || "");
+  };
+
+  const handleAddEmployeeId = () => {
+    const nextEmployeeIds = splitEmployeeInput(form.employeeIdInput);
+    if (!nextEmployeeIds.length) return;
+
+    setForm((prev) => ({
+      ...prev,
+      employeeIdInput: "",
+      employeeIds: compactEmployeeIds([...prev.employeeIds, ...nextEmployeeIds]),
+    }));
+  };
+
+  const handleRemoveEmployeeId = (employeeId) => {
+    setForm((prev) => ({
+      ...prev,
+      employeeIds: prev.employeeIds.filter((item) => item !== employeeId),
+    }));
   };
 
   const handleFileChange = (event) => {
@@ -363,11 +462,6 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
     if (input) input.value = "";
   };
 
-  const refreshEvidence = async () => {
-    const evidenceRes = await fetchEvidence(activeFilters);
-    setEvidenceList(evidenceRes.data || []);
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (selectedImages.length === 0) {
@@ -387,9 +481,11 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
     setError("");
     setSuccess("");
 
+    const employeeIdsForSubmit = compactEmployeeIds([...form.employeeIds, ...splitEmployeeInput(form.employeeIdInput)]);
     const formData = new FormData();
     formData.append("stateName", form.stateName);
     formData.append("fieldOffice", form.fieldOffice);
+    formData.append("employeeId", employeeIdsForSubmit.join(", "));
     formData.append("storeId", form.storeId);
     formData.append("storeName", selectedStoreForForm.storeName || form.storeId);
     formData.append("title", form.title);
@@ -401,9 +497,12 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
     try {
       await uploadEvidence(formData);
       setSuccess("Training evidence uploaded successfully.");
-      setForm(emptyForm);
+      setForm((prev) => ({
+        ...prev,
+        employeeIdInput: "",
+        employeeIds: employeeIdsForSubmit,
+      }));
       clearSelectedImages();
-      await refreshEvidence();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -439,6 +538,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
             "Sl No": index + 1,
             State: item.state_name || "",
             "Field Officer": item.field_office || "",
+            "Employee IDs": getEmployeeIdsText(item),
             "Store ID": item.store_id || "",
             "Store Name": item.store_name || "",
             "Training Title": item.title || "",
@@ -456,6 +556,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
           { wch: 8 },
           { wch: 12 },
           { wch: 18 },
+          { wch: 16 },
           { wch: 14 },
           { wch: 28 },
           { wch: 30 },
@@ -499,6 +600,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
 
       const pptx = new PptxGenJS();
       pptx.layout = "LAYOUT_WIDE";
+      const storeCodeSummary = activeFilters.storeId === "All" ? getStoreCodeSummary(evidenceList) : activeFilters.storeId;
 
       const titleSlide = pptx.addSlide();
       titleSlide.background = { color: "173252" };
@@ -513,7 +615,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
         bold: true,
       });
       titleSlide.addText(
-        `State: ${activeFilters.state} | Field Officer: ${activeFilters.fieldOffice} | Store: ${activeFilters.storeId}`,
+        `Store Code: ${storeCodeSummary}`,
         {
           x: 0.8,
           y: 3.25,
@@ -534,29 +636,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
         align: "center",
       });
 
-      for (const [fieldOffice, items] of Object.entries(groupEvidenceByFieldOffice(evidenceList))) {
-        const sectionSlide = pptx.addSlide();
-        sectionSlide.background = { color: "EEF6FF" };
-        sectionSlide.addText(`Field Officer: ${fieldOffice}`, {
-          x: 0.8,
-          y: 2.35,
-          w: 11.8,
-          h: 0.7,
-          fontSize: 30,
-          color: "173252",
-          align: "center",
-          bold: true,
-        });
-        sectionSlide.addText(`${items.length} training entries in this export`, {
-          x: 0.8,
-          y: 3.25,
-          w: 11.8,
-          h: 0.35,
-          fontSize: 14,
-          color: "5B7089",
-          align: "center",
-        });
-
+      for (const [, items] of Object.entries(groupEvidenceByFieldOffice(evidenceList))) {
         for (const item of items) {
           const imagePaths = getEvidenceImagePaths(item);
           const layouts = getPptImageLayouts(Math.max(imagePaths.length, 1));
@@ -571,7 +651,8 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
             bold: true,
             color: "173252",
           });
-          slide.addText(`${item.state_name || "--"} | ${item.field_office || "--"} | ${item.store_name || "--"} (${item.store_id || "--"})`, {
+          const employeeIdsText = getEmployeeIdsText(item);
+          slide.addText(`${item.state_name || "--"} | ${item.field_office || "--"} | ${employeeIdsText || item.store_name || "--"}`, {
             x: 0.45,
             y: 0.75,
             w: 12.4,
@@ -599,7 +680,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
               slide.addImage({
                 data: imageData,
                 ...layout,
-                sizing: { type: "contain", w: layout.w, h: layout.h },
+                sizing: getPptImageSizing(layout),
               });
             } catch (err) {
               slide.addText("Image could not be loaded", {
@@ -612,15 +693,6 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
                 align: "center",
               });
             }
-            slide.addText(`Image ${index + 1}`, {
-              x: layout.x,
-              y: layout.y + layout.h + 0.03,
-              w: layout.w,
-              h: 0.2,
-              fontSize: 8,
-              color: "70839B",
-              align: "center",
-            });
           }
 
           if (item.remarks) {
@@ -720,20 +792,48 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
             </div>
 
             <label className="training-field">
+              <span>Employee IDs</span>
+              <div className="training-employee-input-row">
+                <input
+                  value={form.employeeIdInput}
+                  placeholder="Type employee ID"
+                  onKeyDown={preventEnterSubmit}
+                  onChange={(event) => handleFormChange("employeeIdInput", event.target.value)}
+                />
+                <button type="button" className="ghost-button" onClick={handleAddEmployeeId}>
+                  Add
+                </button>
+              </div>
+              {form.employeeIds.length > 0 ? (
+                <div className="training-employee-chip-row">
+                  {form.employeeIds.map((employeeId) => (
+                    <span key={employeeId} className="training-employee-chip">
+                      {employeeId}
+                      <button type="button" onClick={() => handleRemoveEmployeeId(employeeId)}>
+                        Remove
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </label>
+
+            <label className="training-field">
               <span>Store</span>
-              <select
+              <input
                 required
-                value={form.storeId}
+                type="search"
+                list="training-store-options"
+                value={storeSearchText}
                 disabled={!form.stateName}
-                onChange={(event) => handleFormChange("storeId", event.target.value)}
-              >
-                <option value="">{form.stateName ? "Select store" : "Select state first"}</option>
+                placeholder={form.stateName ? "Type or select store" : "Select state first"}
+                onChange={(event) => handleStoreSearchChange(event.target.value)}
+              />
+              <datalist id="training-store-options">
                 {formOptions.stores.map((store) => (
-                  <option key={store.storeId} value={store.storeId}>
-                    {store.storeName} ({store.storeId})
-                  </option>
+                  <option key={store.storeId} value={getStoreOptionLabel(store)} />
                 ))}
-              </select>
+              </datalist>
             </label>
 
             {form.stateName && formOptions.offices.length === 0 && (
@@ -889,45 +989,6 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
             </div>
           </div>
 
-          <div className="training-state-panel">
-            <div className="training-section-title">
-              <strong>State Details</strong>
-              <span>{stateSummaries.length} states</span>
-            </div>
-            <div className="training-state-grid">
-              {stateSummaries.slice(0, 10).map((summary) => (
-                <div key={summary.stateName} className="training-state-chip">
-                  <strong>{summary.stateName}</strong>
-                  <span>
-                    {summary.storeCount} stores | {summary.fieldOfficerCount || "No"} FO mapping
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="training-store-panel">
-            <div className="training-section-title">
-              <strong>Store Details From DB</strong>
-              <span>{visibleStoreDetails.length} shown</span>
-            </div>
-            {visibleStoreDetails.length === 0 ? (
-              <div className="training-note">No stores matched the selected filters.</div>
-            ) : (
-              <div className="training-store-list">
-                {visibleStoreDetails.map((store) => (
-                  <div key={store.storeId} className="training-store-row">
-                    <div>
-                      <strong>{store.storeName}</strong>
-                      <span>{store.storeId}</span>
-                    </div>
-                    <span>{store.stateName}</span>
-                    <span>{store.location || "--"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </section>
       </div>
 
@@ -993,6 +1054,7 @@ export function TechnicalTrainingWorkspace({ stores: initialStores = [] }) {
                     <p className="training-store-line">
                       {item.store_name || "--"} <span>({item.store_id || "--"})</span>
                     </p>
+                    {getEmployeeIdsText(item) && <p className="training-store-line">Employee IDs <span>{getEmployeeIdsText(item)}</span></p>}
                     {item.remarks && <p className="training-remarks">{item.remarks}</p>}
                     <div className="training-card-footer">
                       <span>Uploaded</span>

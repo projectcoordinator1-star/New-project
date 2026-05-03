@@ -346,6 +346,7 @@ const server = http.createServer(async (request, response) => {
       const dbPayload = {
         stateName: payload.stateName,
         fieldOffice: payload.fieldOffice,
+        employeeId: payload.employeeId,
         storeId: payload.storeId,
         storeName: payload.storeName,
         title: payload.title,

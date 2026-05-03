@@ -13,6 +13,7 @@ export function ensureTrainingSchema(pool) {
         evidence_id bigserial primary key,
         state_name text not null,
         field_office text not null,
+        employee_id text,
         store_id text,
         store_name text not null,
         title text not null,
@@ -105,6 +106,9 @@ export function ensureTrainingSchema(pool) {
         add column if not exists uploaded_by_user_id bigint;
 
       alter table ${SCHEMA}.${TABLE}
+        add column if not exists employee_id text;
+
+      alter table ${SCHEMA}.${TABLE}
         alter column image_path drop not null;
 
       update ${SCHEMA}.${TABLE}
@@ -155,6 +159,7 @@ export async function fetchTrainingEvidence(pool, searchParams) {
       evidence_id,
       state_name,
       field_office,
+      employee_id,
       store_id,
       store_name,
       title,
@@ -206,7 +211,7 @@ export async function fetchTrainingFormOptions(pool) {
 export async function createTrainingEvidence(pool, payload) {
   await ensureTrainingSchema(pool);
 
-  const { stateName, fieldOffice, storeId, storeName, title, remarks } = payload;
+  const { stateName, fieldOffice, employeeId, storeId, storeName, title, remarks } = payload;
   const imagePaths = Array.isArray(payload.imagePaths)
     ? payload.imagePaths.filter(Boolean).slice(0, MAX_TRAINING_IMAGES)
     : [payload.imagePath].filter(Boolean);
@@ -219,17 +224,18 @@ export async function createTrainingEvidence(pool, payload) {
     insert into ${SCHEMA}.${TABLE} (
       state_name,
       field_office,
+      employee_id,
       store_id,
       store_name,
       title,
       remarks,
       image_path,
       image_paths
-    ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+    ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     returning evidence_id, uploaded_at
   `;
 
-  const values = [stateName, fieldOffice, storeId, storeName, title, remarks, imagePaths[0], imagePaths];
+  const values = [stateName, fieldOffice, employeeId || null, storeId, storeName, title, remarks, imagePaths[0], imagePaths];
   const result = await pool.query(query, values);
 
   return {

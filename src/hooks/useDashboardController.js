@@ -924,6 +924,8 @@ export function useDashboardController() {
           manpower: manpowerRows,
         });
 
+        attendanceDetailStatusRef.current = apiDataSource.attendanceDaily.length ? "loaded" : "idle";
+        olDetailStatusRef.current = apiDataSource.olTickets.length ? "loaded" : "idle";
         setDataSource(apiDataSource);
         setDataInfo({
           mode: "database",
@@ -1001,7 +1003,7 @@ export function useDashboardController() {
   }, [dataSource.olTickets.length]);
 
   useEffect(() => {
-    if (dataInfo.mode !== "database" || activeView !== "attendance") {
+    if (dataInfo.mode !== "database" || (activeView !== "attendance" && activeView !== "data-sync")) {
       return;
     }
 
@@ -1048,7 +1050,7 @@ export function useDashboardController() {
   }, [activeView, dataInfo.mode, dataSource.attendanceDaily.length]);
 
   useEffect(() => {
-    if (dataInfo.mode !== "database" || activeView !== "ol") {
+    if (dataInfo.mode !== "database" || (activeView !== "ol" && activeView !== "data-sync")) {
       return;
     }
 
