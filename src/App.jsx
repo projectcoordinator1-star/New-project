@@ -81,7 +81,7 @@ function App() {
           onMobileMenuOpen={() => setMobileSidebarOpen(true)}
         />
 
-        {activeView !== "stores" && activeView !== "attendance" ? (
+        {activeView !== "stores" && activeView !== "attendance" && activeView !== "it-hardware" ? (
           <AppHero
             activeView={activeView}
             hero={hero}
@@ -139,6 +139,7 @@ function App() {
           onAttendanceDateChange={handleAttendanceDateChange}
           onGroupChange={onGroupChange}
           onRemarkChange={handleRemarkChange}
+          onRoleChange={onRoleChange}
           onStageChange={handleStageChange}
           onStoreUpdate={handleStoreUpdate}
           onStoreStatusChange={handleStoreStatusChange}

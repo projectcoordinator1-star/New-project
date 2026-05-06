@@ -19,6 +19,8 @@ import {
   fetchTrainingEvidence,
   fetchTrainingFormOptions,
 } from "./db/training.js";
+import { ensureItHardwareSchema } from "./modules/itHardware/schema.js";
+import { routeItHardwareRequest } from "./modules/itHardware/routes.js";
 
 loadLocalEnv();
 
@@ -44,6 +46,10 @@ ensureDeepCleaningEvidenceSchema(pool).catch((error) => {
 
 ensureFaultUpdatesSchema(pool).catch((error) => {
   console.warn("Unable to prepare fault status updates schema:", error.message);
+});
+
+ensureItHardwareSchema(pool).catch((error) => {
+  console.warn("Unable to prepare IT hardware ticketing schema:", error.message);
 });
 
 function sendJson(response, statusCode, payload) {
@@ -195,6 +201,18 @@ const server = http.createServer(async (request, response) => {
   }
 
   try {
+    if (
+      await routeItHardwareRequest(request, response, {
+        pathname,
+        requestUrl,
+        pool,
+        readJsonBody,
+        sendJson,
+      })
+    ) {
+      return;
+    }
+
     if (request.method === "GET" && pathname === "/api/health") {
       await pool.query("select 1");
       sendJson(response, 200, {

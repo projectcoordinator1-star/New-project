@@ -13,6 +13,7 @@ import { TrendPanel } from "./TrendPanel";
 import { WorkflowTrackerPanel } from "./WorkflowTrackerPanel";
 import { PoRequestLab } from "./po/PoRequestLab";
 import { TechnicalTrainingWorkspace } from "./TechnicalTrainingWorkspace";
+import { ITHardwareWorkspace } from "./ITHardwareWorkspace";
 
 export function ViewRenderer({
   activeFilters,
@@ -35,6 +36,7 @@ export function ViewRenderer({
   onStageChange,
   onStoreUpdate,
   onStoreStatusChange,
+  onRoleChange,
   pivotRows,
   scopedReportRows,
   scopedWorkflowRows,
@@ -81,6 +83,10 @@ export function ViewRenderer({
 
   if (activeView === "po-lab") {
     return <PoRequestLab />;
+  }
+
+  if (activeView === "it-hardware") {
+    return <ITHardwareWorkspace currentRole={currentRole} onRoleChange={onRoleChange} />;
   }
 
   if (activeView === "training") {

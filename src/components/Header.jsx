@@ -13,9 +13,15 @@ export function Header({
   const currentRoleLabel = WORKFLOW_ROLES.find((role) => role.id === currentRole)?.label || "HQ Admin";
   const modeLabel = dataInfo?.mode === "database" ? "Live DB" : "Demo Snapshot";
   const reportLabel =
-    activeView === "dashboard" ? effectiveReportType : activeView.replace(/-/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
-  const visibleLabel = activeView === "faults" || activeView === "ol" ? "Visible Jobs" : "Visible Stores";
-  const workflowModeLabel = activeView === "faults" ? "All fault tickets visible" : "Role-scoped workflow";
+    activeView === "dashboard"
+      ? effectiveReportType
+      : activeView === "it-hardware"
+        ? "IT Hardware Tickets"
+        : activeView.replace(/-/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+  const visibleLabel =
+    activeView === "it-hardware" ? "Tickets" : activeView === "faults" || activeView === "ol" ? "Visible Jobs" : "Visible Stores";
+  const workflowModeLabel =
+    activeView === "it-hardware" ? "Hardware ticketing" : activeView === "faults" ? "All fault tickets visible" : "Role-scoped workflow";
 
   return (
     <header className="topbar">

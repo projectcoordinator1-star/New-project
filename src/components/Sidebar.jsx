@@ -5,6 +5,7 @@ const sections = [
       { id: "dashboard", label: "Dashboard", enabled: true },
       { id: "reports", label: "Reports", enabled: true },
       { id: "po-lab", label: "PO Lab", enabled: true },
+      { id: "it-hardware", label: "IT Tickets", enabled: true },
     ],
   },
   {
@@ -41,6 +42,7 @@ const itemAbbreviations = {
   dashboard: "DB",
   reports: "RP",
   "po-lab": "PO",
+  "it-hardware": "IT",
   attendance: "AT",
   faults: "FR",
   ol: "OL",

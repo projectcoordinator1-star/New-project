@@ -9,6 +9,27 @@ export const WORKFLOW_ROLES = [
     canEditFaultRemarks: false,
   },
   {
+    id: "employee",
+    label: "Employee Portal",
+    visibleMaxStage: 0,
+    editableStages: [],
+    canEditFaultRemarks: false,
+  },
+  {
+    id: "it",
+    label: "IT Team",
+    visibleMaxStage: 0,
+    editableStages: [],
+    canEditFaultRemarks: false,
+  },
+  {
+    id: "admin",
+    label: "Admin Full Access",
+    visibleMaxStage: WORKFLOW_STAGES.length,
+    editableStages: WORKFLOW_STAGES.map((_, index) => index + 1),
+    canEditFaultRemarks: true,
+  },
+  {
     id: "ground",
     label: "Ground Team",
     visibleMaxStage: 3,

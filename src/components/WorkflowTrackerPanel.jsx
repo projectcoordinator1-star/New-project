@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatNumber } from "../utils/formatters";
 import { WORKFLOW_STAGES } from "../utils/qpmsWorkflow";
+import { normalizeOperationalState } from "../utils/stateGroups";
 import { canRoleEditStage, getAllowedStages, getRoleConfig, getScopeLabel, getStageIndex } from "../utils/workflowRoles";
 
 function groupCounts(rows) {
@@ -33,17 +34,86 @@ function getLifecycleTone(index) {
   return "green";
 }
 
+const FAULT_PAGE_SIZE = 100;
+const FAULT_TICKET_TYPES = [
+  { value: "All", label: "All Tickets" },
+  { value: "CM", label: "RFM4U Call Logs" },
+  { value: "NC", label: "Non Critical Call Logs" },
+];
+const FAULT_CATEGORY_OPTIONS = ["All", "House Keeping", "Pest Control"];
+const FAULT_STATE_OPTIONS = ["All", "TN", "KL", "KN", "TG", "AP-1", "AP-2"];
+
+function uniqueSorted(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, undefined, { sensitivity: "base" }),
+  );
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function matchesFaultCategory(rowCategory, selectedCategory) {
+  if (selectedCategory === "All") return true;
+
+  const category = normalizeText(rowCategory);
+  if (selectedCategory === "House Keeping") {
+    return category.includes("house") || category.includes("hk");
+  }
+
+  if (selectedCategory === "Pest Control") {
+    return category.includes("pest");
+  }
+
+  return category === normalizeText(selectedCategory);
+}
+
+function matchesTicketType(ticketNumber, ticketType) {
+  if (ticketType === "All") return true;
+  return String(ticketNumber || "").trim().toUpperCase().startsWith(ticketType);
+}
+
+function getFaultState(row) {
+  return normalizeOperationalState(row.state || row.region || row.location, "");
+}
+
 export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageChange, remarks = {}, onRemarkChange }) {
   const isFaultReport = reportType === "Fault Report";
   const counts = groupCounts(rows);
   const roleConfig = getRoleConfig(currentRole);
   const [activeRemarkRow, setActiveRemarkRow] = useState(null);
   const [draftRemark, setDraftRemark] = useState("");
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [ticketTypeFilter, setTicketTypeFilter] = useState("All");
+  const [stateFilter, setStateFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [faultPage, setFaultPage] = useState(1);
+  const statusOptions = useMemo(() => ["All", ...uniqueSorted(["Assigned", ...rows.map((row) => row.status)])], [rows]);
   const sortedRows = [...rows].sort((left, right) => {
     const leftIndex = getStageIndex(left.workflowStage);
     const rightIndex = getStageIndex(right.workflowStage);
     return right.ageingDays - left.ageingDays || leftIndex - rightIndex;
   });
+  const trackerFilteredRows = useMemo(() => {
+    if (!isFaultReport) return sortedRows;
+
+    const query = normalizeText(ticketSearch);
+    return sortedRows.filter((row) => {
+      const ticketNumber = String(row.ticketNumber || "");
+      const matchesTicketSearch = !query || normalizeText(ticketNumber).includes(query);
+      const matchesType = matchesTicketType(ticketNumber, ticketTypeFilter);
+      const matchesState = stateFilter === "All" || getFaultState(row) === stateFilter;
+      const matchesStatus = statusFilter === "All" || normalizeText(row.status) === normalizeText(statusFilter);
+      const matchesCategory = matchesFaultCategory(row.category, categoryFilter);
+
+      return matchesTicketSearch && matchesType && matchesState && matchesStatus && matchesCategory;
+    });
+  }, [categoryFilter, isFaultReport, sortedRows, stateFilter, statusFilter, ticketSearch, ticketTypeFilter]);
+  const totalFaultPages = Math.max(1, Math.ceil(trackerFilteredRows.length / FAULT_PAGE_SIZE));
+  const visibleRows = isFaultReport
+    ? trackerFilteredRows.slice((faultPage - 1) * FAULT_PAGE_SIZE, faultPage * FAULT_PAGE_SIZE)
+    : sortedRows.slice(0, 50);
 
   useEffect(() => {
     if (!activeRemarkRow) {
@@ -73,13 +143,22 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
     isFaultReport
       ? "Shows every imported fault ticket in scope. Status_2 values are displayed as remarks and can be updated inline."
       : "The dropdown shows the full lifecycle, but teams can move jobs only inside their own hierarchy stages.";
-  const visibleRows = isFaultReport ? sortedRows : sortedRows.slice(0, 50);
   const faultStatusCoverage = isFaultReport
     ? {
-        filled: rows.filter((row) => String(row.remark ?? row.statusNote ?? "").trim()).length,
-        blank: rows.filter((row) => !String(row.remark ?? row.statusNote ?? "").trim()).length,
+        filled: trackerFilteredRows.filter((row) => String(row.remark ?? row.statusNote ?? "").trim()).length,
+        blank: trackerFilteredRows.filter((row) => !String(row.remark ?? row.statusNote ?? "").trim()).length,
       }
     : null;
+
+  useEffect(() => {
+    setFaultPage(1);
+  }, [categoryFilter, stateFilter, statusFilter, ticketSearch, ticketTypeFilter]);
+
+  useEffect(() => {
+    if (faultPage > totalFaultPages) {
+      setFaultPage(totalFaultPages);
+    }
+  }, [faultPage, totalFaultPages]);
 
   const closeRemarkModal = () => {
     setActiveRemarkRow(null);
@@ -104,7 +183,7 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
         </div>
         {isFaultReport ? (
           <div className="workflow-panel__role">
-            <strong>{rows.length} Tickets Visible</strong>
+            <strong>{trackerFilteredRows.length} Tickets Visible</strong>
             <span>
               {faultStatusCoverage?.filled || 0} with Status_2 notes | {faultStatusCoverage?.blank || 0} blank
             </span>
@@ -129,7 +208,61 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
         </div>
       ) : null}
 
-      {sortedRows.length === 0 ? (
+      {isFaultReport ? (
+        <div className="workflow-tracker-controls">
+          <label>
+            <span>Search Ticket Number</span>
+            <input
+              type="search"
+              value={ticketSearch}
+              placeholder="Type ticket number"
+              onChange={(event) => setTicketSearch(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Ticket Type</span>
+            <select value={ticketTypeFilter} onChange={(event) => setTicketTypeFilter(event.target.value)}>
+              {FAULT_TICKET_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>State</span>
+            <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}>
+              {FAULT_STATE_OPTIONS.map((state) => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+              {FAULT_CATEGORY_OPTIONS.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+
+      {trackerFilteredRows.length === 0 ? (
         <div className="empty-state">
           <strong>{isFaultReport ? "No fault tickets match the current month and filters." : "No workflow jobs match the current role, month, and filters."}</strong>
           <p>{isFaultReport ? "Try changing the month, store, or search filters." : "Jobs beyond your stage scope are hidden automatically."}</p>
@@ -228,6 +361,30 @@ export function WorkflowTrackerPanel({ rows, reportType, currentRole, onStageCha
               })}
             </tbody>
           </table>
+          {isFaultReport ? (
+            <div className="workflow-pagination">
+              <span>
+                Showing {visibleRows.length ? (faultPage - 1) * FAULT_PAGE_SIZE + 1 : 0}-
+                {(faultPage - 1) * FAULT_PAGE_SIZE + visibleRows.length} of {trackerFilteredRows.length}
+              </span>
+              <div>
+                <button type="button" className="ghost-button" onClick={() => setFaultPage((page) => Math.max(1, page - 1))} disabled={faultPage === 1}>
+                  Previous
+                </button>
+                <span>
+                  Page {faultPage} of {totalFaultPages}
+                </span>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setFaultPage((page) => Math.min(totalFaultPages, page + 1))}
+                  disabled={faultPage >= totalFaultPages}
+                >
+                  Next Page
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 

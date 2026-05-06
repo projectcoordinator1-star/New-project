@@ -14,6 +14,7 @@ export const viewReportTypeMap = {
   dashboard: "All Reports",
   reports: "All Reports",
   "po-lab": "PO Lab",
+  "it-hardware": "IT Hardware Tickets",
   attendance: "Attendance",
   faults: "Fault Report",
   ol: "OL Report",
@@ -47,6 +48,13 @@ export const viewMeta = {
     description:
       "Upload the service master workbook, search generic fault keywords, and test how service-code suggestions can feed a PO request flow.",
     badge: "This page is designed as the first building block for supervisor-led PO creation without OCR.",
+  },
+  "it-hardware": {
+    eyebrow: "IT Service Desk",
+    title: "Hardware Ticketing System",
+    description:
+      "Raise, issue, repair, return, replace, and close office hardware tickets with role-scoped access.",
+    badge: "Designed for employee self-service and IT team ownership.",
   },
   attendance: {
     eyebrow: "Operations Report",

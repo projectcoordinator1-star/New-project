@@ -1233,9 +1233,12 @@ export function useDashboardController() {
 
     return workflowSourceRows
       .filter((row) => {
-        const matchesMonth = isAllMonthsValue(activeFilters.month)
-          ? !activeReportMonthSet || activeReportMonthSet.has(row.month)
-          : row.month === activeFilters.month;
+        const matchesMonth =
+          activeView === "faults" && isAllMonthsValue(activeFilters.month)
+            ? true
+            : isAllMonthsValue(activeFilters.month)
+              ? !activeReportMonthSet || activeReportMonthSet.has(row.month)
+              : row.month === activeFilters.month;
 
         return matchesMonth && visibleStoreIds.has(row.storeId);
       })
@@ -1251,7 +1254,7 @@ export function useDashboardController() {
         workflowStage: workflowUpdates[row.ticketNumber]?.stage || row.workflowStage,
         remark: faultRemarks[row.ticketNumber] ?? row.statusNote ?? "",
       }));
-  }, [activeReportMonthSet, faultRemarks, filteredRows, activeFilters.month, activeFilters.search, workflowSourceRows, workflowUpdates]);
+  }, [activeReportMonthSet, activeView, faultRemarks, filteredRows, activeFilters.month, activeFilters.search, workflowSourceRows, workflowUpdates]);
 
   const scopedWorkflowRows = useMemo(
     () =>
@@ -1561,10 +1564,22 @@ export function useDashboardController() {
   };
 
   const hero = viewMeta[activeView] || viewMeta.dashboard;
-  const showFilterPanel = activeView !== "data-sync" && activeView !== "reports" && activeView !== "po-lab" && activeView !== "stores";
-  const showKpis = activeView !== "data-sync" && activeView !== "reports" && activeView !== "po-lab" && activeView !== "stores";
+  const showFilterPanel =
+    activeView !== "data-sync" &&
+    activeView !== "reports" &&
+    activeView !== "po-lab" &&
+    activeView !== "it-hardware" &&
+    activeView !== "stores";
+  const showKpis =
+    activeView !== "data-sync" &&
+    activeView !== "reports" &&
+    activeView !== "po-lab" &&
+    activeView !== "it-hardware" &&
+    activeView !== "stores";
   const visibleStoreCount =
-    activeView === "faults"
+    activeView === "it-hardware"
+      ? "Role-scoped"
+      : activeView === "faults"
       ? scopedWorkflowRows.length
       : activeView === "ol"
         ? scopedWorkflowRows.length
