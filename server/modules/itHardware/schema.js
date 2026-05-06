@@ -4,7 +4,7 @@ const seedEmployees = [
   ["EMP-1001", "Ananya Rao", "ananya.rao@demo.qpms.local", "Operations", "Operations Executive", "Chennai HQ", "EMPLOYEE", "meera.iyer@demo.qpms.local"],
   ["EMP-1002", "Rahul Menon", "rahul.menon@demo.qpms.local", "Finance", "Finance Analyst", "Bengaluru Office", "EMPLOYEE", "meera.iyer@demo.qpms.local"],
   ["EMP-1003", "Priya Nair", "priya.nair@demo.qpms.local", "Human Resources", "HR Manager", "Chennai HQ", "HR", ""],
-  ["IT-2001", "Karthik Srinivasan", "karthik.srinivasan@demo.qpms.local", "Information Technology", "IT Support Lead", "Chennai HQ", "IT", "admin.user@demo.qpms.local"],
+  ["IT-2001", "Karthik", "karthik@demo.qpms.local", "Information Technology", "IT Support Lead", "Chennai HQ", "IT", "admin.user@demo.qpms.local"],
   ["ADM-9001", "Admin User", "admin.user@demo.qpms.local", "Management", "System Administrator", "Head Office", "ADMIN", ""],
 ];
 
@@ -256,7 +256,7 @@ async function seedTicketIfMissing(pool) {
         'Current shared desktop is not enough for audit field visits and spreadsheet review.',
         'Month-end audit team needs a portable device for client and store visits.',
         '2026-05-12',
-        'karthik.srinivasan@demo.qpms.local',
+        'karthik@demo.qpms.local',
         null,
         'rahul.menon@demo.qpms.local',
         '2026-05-03 09:20:00+00',
@@ -279,7 +279,7 @@ async function seedTicketIfMissing(pool) {
         'Battery backup is below one hour and the device shuts down during reviews.',
         'Daily dashboard review calls require reliable laptop availability.',
         '2026-05-08',
-        'karthik.srinivasan@demo.qpms.local',
+        'karthik@demo.qpms.local',
         'Vendor warranty check initiated.',
         'ananya.rao@demo.qpms.local',
         '2026-05-02 10:45:00+00',
@@ -294,7 +294,7 @@ async function seedTicketIfMissing(pool) {
     insert into ${SCHEMA}.it_ticket_audit_log (ticket_number, action_name, actor_email, details, created_at)
     values
       ('HW-2026-0001', 'Ticket Raised', 'rahul.menon@demo.qpms.local', 'New Hardware Request submitted and notification queued to IT with HR in CC.', '2026-05-03 09:20:00+00'),
-      ('HW-2026-0002', 'Status Updated', 'karthik.srinivasan@demo.qpms.local', 'Status changed to Repair Pending.', '2026-05-04 11:30:00+00')
+      ('HW-2026-0002', 'Status Updated', 'karthik@demo.qpms.local', 'Status changed to Repair Pending.', '2026-05-04 11:30:00+00')
     `,
   );
 }
